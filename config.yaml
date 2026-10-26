@@ -1,0 +1,113 @@
+extraction:
+  default: builtin
+  routes:
+    # Docling document formats (requires uv sync --python 3.12 --extra docling).
+    # PDF/image OCR uses Docling's pipeline; extraction.ocr below is builtin-only.
+    pdf: docling
+    docx: docling
+    dotx: docling
+    docm: docling
+    dotm: docling
+    pptx: docling
+    potx: docling
+    ppsx: docling
+    pptm: docling
+    potm: docling
+    ppsm: docling
+    xlsx: docling
+    xlsm: docling
+    xltx: docling
+    xltm: docling
+    odt: docling
+    ott: docling
+    ods: docling
+    ots: docling
+    odp: docling
+    otp: docling
+    html: docling
+    htm: docling
+    xhtml: docling
+    mhtml: docling
+    mht: docling
+    md: docling
+    markdown: docling
+    qmd: docling
+    rmd: docling
+    text: docling
+    csv: docling
+    adoc: docling
+    asciidoc: docling
+    asc: docling
+    tex: docling
+    latex: docling
+    eml: docling
+    msg: docling
+    epub: docling
+    boxnote: docling
+    vtt: docling
+    afp: docling
+    # Schema-specific formats with distinct extensions.
+    nxml: docling  # JATS XML
+    xbrl: docling
+    dclg: docling  # DocLang XML
+    dclx: docling  # DocLang archive
+    # Image formats; Docling performs OCR when needed.
+    png: docling
+    jpg: docling
+    jpeg: docling
+    tif: docling
+    tiff: docling
+    bmp: docling
+    webp: docling
+    gif: docling
+    # Keep plain text and arbitrary JSON/XML on the builtin extractor.
+    # Docling JSON must follow its document schema; XML must use a supported schema.
+    txt: builtin
+    json: builtin
+    xml: builtin
+    rst: builtin
+    log: builtin
+    # Docling needs LibreOffice for legacy Office and RTF; use Tika here.
+    doc: tika
+    dot: tika
+    ppt: tika
+    pot: tika
+    pps: tika
+    xls: tika
+    xlt: tika
+    rtf: tika
+    # Audio/video need Docling's asr extra (video also needs ffmpeg).
+    # Apple iWork needs the format-iwork extra; EBCDIC needs a record layout.
+    # Add routes for those formats after configuring their dependencies.
+  fallback: [tika]
+  tika:
+    enabled: true
+    url: http://127.0.0.1:9998
+    timeout_seconds: 180
+  docling:
+    enabled: true
+  ocr:
+    backend: docker  # docker or native
+    # compose_file: /absolute/path/to/compose.yaml  # defaults to this repository's compose.yaml
+    mode: auto  # off, auto, always
+    language: eng
+    min_chars_per_page: 40
+
+summarization:
+  document_model: qwen3:14b
+  directory_model: qwen3:32b
+  ollama_url: http://127.0.0.1:11434
+  context_tokens: 32768
+  max_output_tokens: 1200
+  temperature: 0.1
+  timeout_seconds: 900
+  retries: 2
+  chunk_chars: 14000
+  chunk_overlap_chars: 500
+  group_chars: 14000
+  thinking: false
+
+output:
+  html: summary.html
+  include_documents: true
+  include_empty_directories: true

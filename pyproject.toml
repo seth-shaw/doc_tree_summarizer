@@ -1,0 +1,28 @@
+[project]
+name = "local-ai-summarizer"
+version = "0.2.0"
+description = "Offline-first bottom-up hierarchical document summarization with Ollama"
+requires-python = ">=3.12"
+dependencies = [
+  "pymupdf>=1.24,<2",
+  "python-docx>=1.1,<2",
+  "beautifulsoup4>=4.12,<5",
+  "PyYAML>=6,<7",
+  "markdown-it-py>=3,<5",
+]
+
+[project.optional-dependencies]
+docling = ["docling>=2,<3"]
+
+[project.scripts]
+summarizer = "summarizer.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/summarizer"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]

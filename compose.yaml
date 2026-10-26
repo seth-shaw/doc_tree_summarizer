@@ -1,0 +1,30 @@
+services:
+  ocrmypdf:
+    image: jbarlow83/ocrmypdf-alpine:latest
+    stdin_open: true
+    security_opt:
+      - no-new-privileges:true
+    # One-shot OCR jobs have no server endpoint; check the required tools.
+    healthcheck:
+      test: ["CMD-SHELL", "ocrmypdf --version >/dev/null 2>&1 && tesseract --version >/dev/null 2>&1 && gs --version >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+  tika:
+    image: apache/tika:3.2.3.0-full
+    ports:
+      - "127.0.0.1:9998:9998"
+    restart: unless-stopped
+    mem_limit: 4g
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--timeout=5", "--output-document=/dev/null", "http://127.0.0.1:9998/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
