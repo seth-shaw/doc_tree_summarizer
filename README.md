@@ -33,6 +33,8 @@ Open the resulting `summary.html` in a browser. No server is needed. Expand or c
 
 Use `uv run summarizer --help` for additional flags. Use `--model qwen3:14b --directory-model qwen3:32b` to override the YAML models.
 
+Progress is logged to stderr by default with timestamps: the current directory and file, hashing and extraction stages, extractor attempts, cache hits, model name, chunk counts, reduction rounds, and completion times. Operations taking longer than 60 seconds print a "Still working" message with the active path and elapsed time, repeated every 60 seconds. Ollama retries are logged, and the final message includes processed file, failure, and completed directory counts. Add `--verbose` for debug logging. To keep a log while watching progress, append `2>&1 | tee summarizer.log` to your command.
+
 ## How the hierarchy works
 
 Every supported file is extracted and summarized. Each directory is summarized from **only its immediate file summaries and immediate subdirectory summaries**, not from all descendant source text. Directories are processed bottom-up. For long inputs, chunk summaries are recursively reduced so the model receives bounded text.
@@ -57,6 +59,16 @@ Tika is served at `http://127.0.0.1:9998`; Ollama at `http://127.0.0.1:11434`. N
 ## Caching and privacy
 
 The SQLite database caches extraction, document summary and directory summary stages separately. Cache keys incorporate source contents, configuration, prompts and model names. Restarting an interrupted run reuses successful cached results. Failed files appear in the report and are excluded from parent syntheses.
+
+Inspect the `cache_entries` view to see each key's absolute source path, filename (or directory name), model, and summary part (chunk or reduction group):
+
+```sql
+SELECT stage, path, filename, model, part, key
+FROM cache_entries
+ORDER BY path, stage, part;
+```
+
+Extraction rows have a NULL model because extraction does not use a summarization model. Shared content can produce multiple source rows for the same key. Existing databases are upgraded automatically without invalidating results; older entries have NULL metadata until reused by a run. Original paths cannot be recovered from hashes alone.
 
 The output HTML renders summary Markdown as headings, lists, emphasis, tables, links, and code blocks. Filenames, warnings, and raw HTML in summaries are escaped; unsafe link schemes and embedded images are disabled. The report has no external assets or JavaScript dependencies. Do not expose the Tika service to the network; do not process untrusted documents without appropriate sandboxing. For strict offline processing, pre-download the Compose images, Ollama models and any Docling model dependencies, then test disconnected from the network. Avoid syncing the input/output/cache directories to cloud storage.
 

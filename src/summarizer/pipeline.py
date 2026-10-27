@@ -1,10 +1,12 @@
 import hashlib
 import json
 import logging
+import time
 from pathlib import Path
 
 from .extractors.router import extract
 from .output.html import render
+from .progress import activity
 
 LOG = logging.getLogger(__name__)
 VERSION = 'pipeline-v2'
@@ -51,23 +53,32 @@ def chunks(text: str, limit: int, overlap: int = 0) -> list[str]:
         start = max(start + 1, end - overlap)
     return result
 
-def summarize_long(text: str, model: str, prompt: str, config: dict, client, cache, stage: str) -> str:
+def summarize_long(text: str, model: str, prompt: str, config: dict, client, cache, stage: str,
+                   path: Path | None = None) -> str:
     limit = int(config.get('chunk_chars', 14000))
     overlap = int(config.get('chunk_overlap_chars', 500))
     parts = chunks(text, limit, overlap)
-    def cached_call(instruction, body, suffix):
+    context = f'{stage} summary: {path}' if path is not None else f'{stage} summary'
+    LOG.info('Preparing %s (%d characters, %d chunks, model %s)', context, len(text), len(parts), model)
+    def cached_call(instruction, body, suffix, label):
         key = digest([VERSION, stage, suffix, model, instruction, body, config])
-        cached = cache.get(stage, key)
+        cached = cache.get(stage, key, path=path, model=model, part=label)
         if cached is not None:
+            LOG.info('Cache hit: %s (%s)', context, label)
             return cached
-        answer = client.summarize(model, instruction, body)
-        cache.put(stage, key, answer)
+        with activity(f'{context} ({label}, model {model})'):
+            answer = client.summarize(model, instruction, body)
+        cache.put(stage, key, answer, path=path, model=model, part=label)
         return answer
     if len(parts) == 1:
-        return cached_call(prompt, parts[0], 'single')
-    summaries = [cached_call(prompt + f'\nThis is chunk {i + 1} of {len(parts)}.', part, f'chunk-{i}') for i, part in enumerate(parts)]
+        return cached_call(prompt, parts[0], 'single', 'chunk 1/1')
+    summaries = [cached_call(prompt + f'\nThis is chunk {i + 1} of {len(parts)}.', part,
+                             f'chunk-{i}', f'chunk {i + 1}/{len(parts)}') for i, part in enumerate(parts)]
     # Recursive bounded reduction: never send all chunks at once if the combined text is too long.
+    round_number = 0
     while len(summaries) > 1:
+        round_number += 1
+        LOG.info('Reducing %s (round %d, %d partial summaries)', context, round_number, len(summaries))
         group_limit = int(config.get('group_chars', 14000))
         if group_limit < 100:
             raise ValueError('group_chars must be >=100')
@@ -86,18 +97,20 @@ def summarize_long(text: str, model: str, prompt: str, config: dict, client, cac
         next_round = []
         for i, group in enumerate(grouped):
             combined = '\n\n---\n\n'.join(group)
+            label = f'reduction round {round_number}, group {i + 1}/{len(grouped)}'
             if len(combined) > group_limit:
-                next_round.append(cached_call(REDUCE_PROMPT, combined[:group_limit], f'reduce-truncated-{digest(combined)}'))
+                next_round.append(cached_call(REDUCE_PROMPT, combined[:group_limit], f'reduce-truncated-{digest(combined)}', label))
             elif len(group) == 1 and len(grouped) > 1:
                 next_round.append(group[0])
             else:
-                next_round.append(cached_call(REDUCE_PROMPT, combined, f'reduce-{digest(combined)}'))
+                next_round.append(cached_call(REDUCE_PROMPT, combined, f'reduce-{digest(combined)}', label))
         if len(next_round) >= len(summaries):
             # Bound progress by pairing consecutive summaries, even if they are long.
             next_round = []
             for i in range(0, len(summaries), 2):
                 pair = '\n\n---\n\n'.join(summaries[i:i + 2])
-                next_round.append(cached_call(REDUCE_PROMPT, pair[:group_limit], f'pair-{digest(pair)}'))
+                next_round.append(cached_call(REDUCE_PROMPT, pair[:group_limit], f'pair-{digest(pair)}',
+                                              f'reduction round {round_number}, pair {i // 2 + 1}/{(len(summaries) + 1) // 2}'))
         summaries = next_round
     return summaries[0]
 
@@ -110,37 +123,58 @@ def run(root: Path, config: dict, cache, client, destination: Path) -> dict:
     supported = set(extraction_cfg.get('routes', {}))
     # Avoid scanning generated reports or the SQLite database if placed inside the source tree.
     excluded = {destination.resolve()}
+    started = time.monotonic()
+    files_completed = 0
+    files_failed = 0
+    directories_completed = 0
+    LOG.info('Processing document tree: %s', root)
 
     def process_file(path: Path) -> dict:
+        nonlocal files_completed, files_failed
+        file_started = time.monotonic()
+        LOG.info('Processing file: %s', path)
         node = {'type': 'file', 'name': path.name, 'status': 'ok', 'summary': '', 'warnings': []}
         try:
-            source_hash = file_hash(path)
+            with activity(f'Hashing file: {path}'):
+                source_hash = file_hash(path)
             extraction_key = digest([VERSION, 'extraction', source_hash, path.suffix.lower(), extraction_cfg])
-            cached = cache.get('extraction', extraction_key)
+            cached = cache.get('extraction', extraction_key, path=path)
             if cached is None:
-                result = extract(path, extraction_cfg)
+                with activity(f'Extracting file: {path}'):
+                    result = extract(path, extraction_cfg)
                 data = {'text': result.text, 'extractor': result.extractor, 'warnings': result.warnings}
-                cache.put('extraction', extraction_key, json.dumps(data, ensure_ascii=False))
+                cache.put('extraction', extraction_key, json.dumps(data, ensure_ascii=False), path=path)
             else:
+                LOG.info('Extraction cache hit: %s', path)
                 data = json.loads(cached)
+            LOG.info('Extracted %s (%s, %d characters)', path, data['extractor'], len(data['text']))
             node['warnings'] = data.get('warnings', [])
             node['extractor'] = data['extractor']
             node['summary'] = summarize_long(data['text'], summarization_cfg['document_model'], DOCUMENT_PROMPT,
-                                             summarization_cfg, client, cache, 'document')
+                                             summarization_cfg, client, cache, 'document', path)
         except Exception as exc:
             LOG.exception('Failed file: %s', path)
             node['status'] = 'failed'
             node['summary'] = str(exc)
+            files_failed += 1
+        files_completed += 1
+        LOG.info('File complete: %s (status=%s, %.1fs; %d files completed, %d failed)',
+                 path, node['status'], time.monotonic() - file_started, files_completed, files_failed)
         return node
 
     def process_dir(path: Path) -> dict:
+        nonlocal directories_completed
+        directory_started = time.monotonic()
+        LOG.info('Entering directory: %s', path)
         node = {'type': 'directory', 'name': path.name, 'status': 'ok', 'summary': '', 'children': [], 'warnings': []}
         try:
             entries = sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name.casefold()))
         except OSError as exc:
+            LOG.exception('Cannot read directory: %s', path)
             node['status'] = 'failed'
             node['summary'] = str(exc)
             return node
+        LOG.info('Scanning directory: %s (%d entries)', path, len(entries))
         for entry in entries:
             if entry.is_symlink():
                 continue
@@ -153,10 +187,11 @@ def run(root: Path, config: dict, cache, client, destination: Path) -> dict:
         if failures:
             node['warnings'].append(f'{len(failures)} immediate child item(s) failed; synthesis is incomplete.')
         if successful:
+            LOG.info('Summarizing directory: %s (%d successful children, %d failed)', path, len(successful), len(failures))
             source = '\n\n'.join(f'[{child["type"]}: {child["name"]}]\n{child["summary"]}' for child in successful)
             try:
                 node['summary'] = summarize_long(source, summarization_cfg['directory_model'], DIRECTORY_PROMPT,
-                                                 summarization_cfg, client, cache, 'directory')
+                                                 summarization_cfg, client, cache, 'directory', path)
             except Exception as exc:
                 LOG.exception('Failed directory synthesis: %s', path)
                 node['status'] = 'failed'
@@ -165,8 +200,14 @@ def run(root: Path, config: dict, cache, client, destination: Path) -> dict:
             node['summary'] = 'No successfully summarized items in this directory.'
             if failures:
                 node['status'] = 'failed'
+        directories_completed += 1
+        LOG.info('Directory complete: %s (status=%s, %.1fs; %d directories completed)',
+                 path, node['status'], time.monotonic() - directory_started, directories_completed)
         return node
 
     result = process_dir(root)
-    render(result, destination)
+    with activity(f'Writing HTML report: {destination.resolve()}'):
+        render(result, destination)
+    LOG.info('Run complete: %d files processed, %d files failed, %d directories completed (%.1fs)',
+             files_completed, files_failed, directories_completed, time.monotonic() - started)
     return result

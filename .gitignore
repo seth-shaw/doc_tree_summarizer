@@ -1,0 +1,55 @@
+# Python bytecode and packaging
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+/build/
+/dist/
+/.eggs/
+
+# Virtual environments and local uv cache
+.venv/
+venv/
+env/
+.uv-cache/
+# Keep uv.lock and .python-version in version control for reproducibility.
+
+# Test, coverage, and tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Local environment settings and Docker Compose overrides
+.env
+.env.*
+!.env.example
+!.env.*.example
+/compose.override.yaml
+/compose.override.yml
+/docker-compose.override.yaml
+/docker-compose.override.yml
+
+# Generated summarizer output and cache
+/summary.html
+/state/
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+Thumbs.db

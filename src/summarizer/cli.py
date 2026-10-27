@@ -16,7 +16,8 @@ def main(argv=None):
     parser.add_argument('--directory-model', help='Override directory model')
     parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format='%(levelname)s %(message)s')
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
+                        format='%(asctime)s %(levelname)s %(message)s', datefmt='%H:%M:%S')
     config = yaml.safe_load(args.config.read_text(encoding='utf-8'))
     if args.model:
         config['summarization']['document_model'] = args.model

@@ -1,6 +1,9 @@
 import json
+import logging
 import time
 import urllib.request
+
+LOG = logging.getLogger(__name__)
 
 class Ollama:
     def __init__(self, config: dict):
@@ -24,8 +27,11 @@ class Ollama:
                 if not answer:
                     raise RuntimeError('Empty model response')
                 return answer
-            except Exception:
+            except Exception as exc:
                 if attempt == int(cfg.get('retries', 2)):
                     raise
-                time.sleep(min(2 ** attempt, 10))
+                delay = min(2 ** attempt, 10)
+                LOG.warning('Ollama request failed for model %s (attempt %d/%d): %s; retrying in %ds',
+                            model, attempt + 1, int(cfg.get('retries', 2)) + 1, exc, delay)
+                time.sleep(delay)
         raise RuntimeError('Unreachable')
