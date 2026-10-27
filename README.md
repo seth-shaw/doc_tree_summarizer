@@ -39,6 +39,8 @@ Progress is logged to stderr by default with timestamps: the current directory a
 
 Every supported file is extracted and summarized. Each directory is summarized from **only its immediate file summaries and immediate subdirectory summaries**, not from all descendant source text. Directories are processed bottom-up. For long inputs, chunk summaries are recursively reduced so the model receives bounded text.
 
+Each directory entry in the HTML report also shows a programmatically calculated count and total size for all regular files beneath it, plus the earliest and latest file modification dates in UTC. Each summarized file shows its size and modification date. Sizes use bytes below 1 KB and scale through KB, MB, GB, and TB using 1,000 bytes per unit. Symlinks and the generated report are excluded; files without a configured extraction route still count toward directory totals.
+
 ## Configuration
 
 Edit `config.yaml`:
@@ -57,7 +59,7 @@ Edit `config.yaml`:
 
 Tika is served at `http://127.0.0.1:9998`; Ollama at `http://127.0.0.1:11434`. No cloud AI APIs are used.
 
-## Caching and privacy
+## Caching
 
 The SQLite database caches extraction, document summary and directory summary stages separately. Cache keys incorporate source contents, configuration, prompts and model names. Restarting an interrupted run reuses successful cached results. Failed files appear in the report and are excluded from parent syntheses.
 
@@ -71,7 +73,13 @@ ORDER BY path, stage, part;
 
 Extraction rows have a NULL model because extraction does not use a summarization model. Shared content can produce multiple source rows for the same key. Existing databases are upgraded automatically without invalidating results; older entries have NULL metadata until reused by a run. Original paths cannot be recovered from hashes alone.
 
-The output HTML renders summary Markdown as headings, lists, emphasis, tables, links, and code blocks. Filenames, warnings, and raw HTML in summaries are escaped; unsafe link schemes and embedded images are disabled. The report has no external assets or JavaScript dependencies. Do not expose the Tika service to the network; do not process untrusted documents without appropriate sandboxing. For strict offline processing, pre-download the Compose images, Ollama models and any Docling model dependencies, then test disconnected from the network. Avoid syncing the input/output/cache directories to cloud storage.
+## Output
+
+The output HTML renders summary Markdown as headings, lists, emphasis, tables, links, and code blocks. Filenames, warnings, and raw HTML in summaries are escaped; unsafe link schemes and embedded images are disabled. The report has no external assets or JavaScript dependencies. 
+
+## Safety and privacy
+
+Do not expose the Tika service to the network; do not process untrusted documents without appropriate sandboxing. For strict offline processing, pre-download the Compose images, Ollama models and any Docling model dependencies, then test disconnected from the network. Avoid syncing the input/output/cache directories to cloud storage.
 
 ## Limitations
 
