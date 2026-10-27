@@ -5,11 +5,12 @@ import time
 from pathlib import Path
 
 from .extractors.router import extract
+from .extractors.image import IMAGE_SUFFIXES
 from .output.html import render
 from .progress import activity
 
 LOG = logging.getLogger(__name__)
-VERSION = 'pipeline-v2'
+VERSION = 'pipeline-v3'
 
 DOCUMENT_PROMPT = ('Summarize the supplied document faithfully. Identify its purpose, important claims, dates, '
                    'people, conclusions and uncertainties when present. Do not invent facts. Retain source page '
@@ -141,8 +142,15 @@ def run(root: Path, config: dict, cache, client, destination: Path) -> dict:
             cached = cache.get('extraction', extraction_key, path=path)
             if cached is None:
                 with activity(f'Extracting file: {path}'):
-                    result = extract(path, extraction_cfg)
+                    if path.suffix.lower() in IMAGE_SUFFIXES:
+                        from .extractors.image import extract as extract_image
+                        result, image_kind = extract_image(path, extraction_cfg, client)
+                    else:
+                        result = extract(path, extraction_cfg)
+                        image_kind = None
                 data = {'text': result.text, 'extractor': result.extractor, 'warnings': result.warnings}
+                if image_kind is not None:
+                    data['image_kind'] = image_kind
                 cache.put('extraction', extraction_key, json.dumps(data, ensure_ascii=False), path=path)
             else:
                 LOG.info('Extraction cache hit: %s', path)
@@ -150,6 +158,8 @@ def run(root: Path, config: dict, cache, client, destination: Path) -> dict:
             LOG.info('Extracted %s (%s, %d characters)', path, data['extractor'], len(data['text']))
             node['warnings'] = data.get('warnings', [])
             node['extractor'] = data['extractor']
+            if data.get('image_kind'):
+                node['image_kind'] = data['image_kind']
             node['summary'] = summarize_long(data['text'], summarization_cfg['document_model'], DOCUMENT_PROMPT,
                                              summarization_cfg, client, cache, 'document', path)
         except Exception as exc:

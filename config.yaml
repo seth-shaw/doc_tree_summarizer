@@ -92,6 +92,10 @@ extraction:
     mode: auto  # off, auto, always
     language: eng
     min_chars_per_page: 40
+  image:
+    model: qwen2.5vl:3b
+    max_pages: 5  # Sample this many pages when characterizing multi-page TIFF/GIF files.
+    max_dimension: 1600  # Resize for vision classification; OCR uses the original image.
 
 summarization:
   document_model: qwen3:14b

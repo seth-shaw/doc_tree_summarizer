@@ -6,7 +6,7 @@ A resumable, bottom-up document summarizer using text extraction and local-AI ge
 
 1. Install [uv](https://docs.astral.sh/uv/), [Docker Desktop](https://www.docker.com/products/docker-desktop/), and [Ollama](https://ollama.com/download/mac/).
 2. Start Docker Desktop and download the OCR and Tika images: `docker compose pull`. No local OCRmyPDF, Tesseract, or Tika installation is required.
-3. Download local models: `ollama pull qwen3:14b` and `ollama pull qwen3:32b`.
+3. Download local models: `ollama pull qwen3:14b`, `ollama pull qwen3:32b`, and `ollama pull qwen2.5vl:3b` (or the model set in `extraction.image.model`).
 4. In this directory, install and pin Python 3.12, then sync dependencies:
 
    ```bash
@@ -45,6 +45,7 @@ Edit `config.yaml`:
 
 - `extraction.routes`: select `builtin`, `tika`, or `docling` per extension.
 - `extraction.docling.enabled`: enabled in the supplied config, with routes for PDF, Office Open XML, OpenDocument, HTML, Markdown, CSV, images, and other [supported Docling formats](https://docling-project.github.io/docling/usage/supported_formats/). PDF/image processing may download models on first use. Docling uses its own OCR pipeline; `extraction.ocr` settings apply only to the built-in PDF extractor. Generic JSON/XML and plain text use `builtin`; legacy Office and RTF use `tika`.
+- Images are first characterized by the configured local vision model (`extraction.image.model`, default `qwen2.5vl:3b`). Ordinary photographs and other non-document images are summarized from the visual description. Images classified as scanned documents are then extracted through their configured route (Docling by default, with Tika fallback). The supplied full Tika image includes Tesseract OCR for image formats. Multi-page TIFF/GIF characterization samples up to `extraction.image.max_pages` pages, resized to `extraction.image.max_dimension` pixels on the longest edge; document extraction still receives the original file. Ollama HTTP errors include the server response to aid troubleshooting.
 - `extraction.fallback`: optional ordered list of alternative extractors.
 - `extraction.ocr.backend`: `docker` (default) runs the `ocrmypdf` Compose service once per PDF needing OCR, then removes the container. PDFs stream through stdin/stdout, so no document directories need to be mounted. The `ocr` profile keeps this job service out of `docker compose up -d`.
 - `extraction.ocr.compose_file`: optional path to the Compose file; defaults to this repository's `compose.yaml`, independent of your working directory. Set an absolute path if installing the Python package outside this checkout.

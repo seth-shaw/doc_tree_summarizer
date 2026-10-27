@@ -27,7 +27,9 @@ def _node(node: dict) -> str:
     text = node.get('summary', '')
     message = MARKDOWN.render(text) if status == 'ok' else html.escape(text)
     notes = ''.join(f'<p class="warning">{html.escape(note)}</p>' for note in node.get('warnings', []))
-    label = f'{title} <span class="meta">({kind}, {status})</span>'
+    image_kind = node.get('image_kind')
+    image_label = f', image: {html.escape(image_kind)}' if image_kind else ''
+    label = f'{title} <span class="meta">({kind}, {status}{image_label})</span>'
     children = ''.join(_node(child) for child in node.get('children', []))
     error_class = ' error' if status != 'ok' else ''
     return f'<details><summary>{label}</summary><div class="summary{error_class}">{message}</div>{notes}<div class="children">{children}</div></details>'

@@ -733,6 +733,7 @@ source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "markdown-it-py" },
+    { name = "pillow" },
     { name = "pymupdf" },
     { name = "python-docx" },
     { name = "pyyaml" },
@@ -753,6 +754,7 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12,<5" },
     { name = "docling", marker = "extra == 'docling'", specifier = ">=2,<3" },
     { name = "markdown-it-py", specifier = ">=3,<5" },
+    { name = "pillow", specifier = ">=10,<14" },
     { name = "pymupdf", specifier = ">=1.24,<2" },
     { name = "python-docx", specifier = ">=1.1,<2" },
     { name = "pyyaml", specifier = ">=6,<7" },
