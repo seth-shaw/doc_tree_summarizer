@@ -6,6 +6,15 @@ from markdown_it import MarkdownIt
 # Model output is untrusted. Escape raw HTML and prevent embedded remote assets.
 MARKDOWN = MarkdownIt('js-default', {'breaks': True}).disable('image')
 
+def _format_size(size: int) -> str:
+    if size < 1000:
+        return f'{size:,} bytes'
+    value = float(size)
+    for unit in ('KB', 'MB', 'GB', 'TB'):
+        value /= 1000
+        if value < 1000 or unit == 'TB':
+            return f'{value:.1f} {unit}'
+
 STYLE = '''
 :root {color-scheme:light dark;font-family:system-ui,-apple-system,sans-serif;line-height:1.5}
 body {max-width:1100px;margin:2rem auto;padding:0 1rem} header{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
@@ -29,7 +38,16 @@ def _node(node: dict) -> str:
     notes = ''.join(f'<p class="warning">{html.escape(note)}</p>' for note in node.get('warnings', []))
     image_kind = node.get('image_kind')
     image_label = f', image: {html.escape(image_kind)}' if image_kind else ''
-    label = f'{title} <span class="meta">({kind}, {status}{image_label})</span>'
+    directory_stats = ''
+    if kind == 'directory' and 'file_count' in node:
+        modified_range = node.get('modified_range')
+        dates = f', modified {html.escape(modified_range[0])} – {html.escape(modified_range[1])}' if modified_range else ', no file dates'
+        directory_stats = (f', {node["file_count"]} files, {_format_size(node["size_bytes"])}{dates}')
+    file_metadata = ''
+    if kind == 'file' and 'size_bytes' in node:
+        modified_date = html.escape(node['modified_date'])
+        file_metadata = f', {_format_size(node["size_bytes"])}, modified {modified_date}'
+    label = f'{title} <span class="meta">({kind}, {status}{image_label}{directory_stats}{file_metadata})</span>'
     children = ''.join(_node(child) for child in node.get('children', []))
     error_class = ' error' if status != 'ok' else ''
     return f'<details><summary>{label}</summary><div class="summary{error_class}">{message}</div>{notes}<div class="children">{children}</div></details>'

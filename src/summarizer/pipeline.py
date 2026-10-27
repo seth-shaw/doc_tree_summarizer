@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .extractors.router import extract
@@ -130,11 +131,15 @@ def run(root: Path, config: dict, cache, client, destination: Path) -> dict:
     directories_completed = 0
     LOG.info('Processing document tree: %s', root)
 
-    def process_file(path: Path) -> dict:
+    def process_file(path: Path, stat=None) -> dict:
         nonlocal files_completed, files_failed
         file_started = time.monotonic()
         LOG.info('Processing file: %s', path)
         node = {'type': 'file', 'name': path.name, 'status': 'ok', 'summary': '', 'warnings': []}
+        if stat is None:
+            stat = path.stat()
+        node['size_bytes'] = stat.st_size
+        node['modified_date'] = datetime.fromtimestamp(stat.st_mtime, timezone.utc).date().isoformat()
         try:
             with activity(f'Hashing file: {path}'):
                 source_hash = file_hash(path)
@@ -176,7 +181,8 @@ def run(root: Path, config: dict, cache, client, destination: Path) -> dict:
         nonlocal directories_completed
         directory_started = time.monotonic()
         LOG.info('Entering directory: %s', path)
-        node = {'type': 'directory', 'name': path.name, 'status': 'ok', 'summary': '', 'children': [], 'warnings': []}
+        node = {'type': 'directory', 'name': path.name, 'status': 'ok', 'summary': '', 'children': [], 'warnings': [],
+                'file_count': 0, 'size_bytes': 0, 'modified_range': None}
         try:
             entries = sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name.casefold()))
         except OSError as exc:
@@ -185,13 +191,30 @@ def run(root: Path, config: dict, cache, client, destination: Path) -> dict:
             node['summary'] = str(exc)
             return node
         LOG.info('Scanning directory: %s (%d entries)', path, len(entries))
+        dates = []
         for entry in entries:
             if entry.is_symlink():
                 continue
             if entry.is_dir():
-                node['children'].append(process_dir(entry))
-            elif entry.is_file() and entry.suffix.lower().lstrip('.') in supported and entry.resolve() not in excluded:
-                node['children'].append(process_file(entry))
+                child = process_dir(entry)
+                node['children'].append(child)
+                node['file_count'] += child['file_count']
+                node['size_bytes'] += child['size_bytes']
+                if child['modified_range']:
+                    dates.extend(child['modified_range'])
+            elif entry.is_file() and entry.resolve() not in excluded:
+                try:
+                    stat = entry.stat()
+                except OSError as exc:
+                    LOG.warning('Cannot read file metadata: %s (%s)', entry, exc)
+                    continue
+                node['file_count'] += 1
+                node['size_bytes'] += stat.st_size
+                dates.append(datetime.fromtimestamp(stat.st_mtime, timezone.utc).date().isoformat())
+                if entry.suffix.lower().lstrip('.') in supported:
+                    node['children'].append(process_file(entry, stat))
+        if dates:
+            node['modified_range'] = [min(dates), max(dates)]
         successful = [child for child in node['children'] if child['status'] == 'ok' and child['summary']]
         failures = [child for child in node['children'] if child['status'] != 'ok']
         if failures:
