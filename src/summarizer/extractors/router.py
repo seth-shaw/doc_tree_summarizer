@@ -22,7 +22,8 @@ def extract(path: Path, config: dict) -> Extracted:
                 raise ValueError('Extractor returned no text')
             result.warnings.extend(errors)
             return result
-        except Exception as exc:
+        # Catch any extractor failure so the configured fallback can run.
+        except Exception as exc:  # noqa: BLE001
             LOG.warning('%s extraction failed: %s: %s', name, path, exc)
             errors.append(f'{name}: {exc}')
     raise RuntimeError('; '.join(errors))

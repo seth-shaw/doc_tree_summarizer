@@ -28,9 +28,8 @@ def test_activity_heartbeat_and_cleanup(monkeypatch, caplog):
 def test_activity_failure_is_reported_and_propagated(caplog):
     caplog.set_level('INFO', logger='summarizer')
     workers_before = set(threading.enumerate())
-    with pytest.raises(RuntimeError, match='model unavailable'):
-        with progress.activity('document summary: /documents/file.txt'):
-            raise RuntimeError('model unavailable')
+    with pytest.raises(RuntimeError, match='model unavailable'), progress.activity('document summary: /documents/file.txt'):
+        raise RuntimeError('model unavailable')
     assert 'Stopped: document summary: /documents/file.txt' in caplog.text
     assert 'Finished:' not in caplog.text
     assert set(threading.enumerate()) == workers_before

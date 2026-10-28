@@ -22,12 +22,13 @@ def _ocr_pdf(path: Path, target: Path, ocr: dict, mode: str) -> None:
                    'ocrmypdf', *options, '-', '-']
         # Stream PDF bytes directly: no host mounts or container-owned output files.
         with path.open('rb') as source, target.open('wb') as output:
-            result = subprocess.run(command, stdin=source, stdout=output, stderr=subprocess.PIPE,
+            result = subprocess.run(command, check=False, stdin=source, stdout=output, stderr=subprocess.PIPE,
                                     text=True, timeout=3600)
     elif backend == 'native':
         if not shutil.which('ocrmypdf'):
             raise RuntimeError('PDF OCR needs native ocrmypdf; install it or set extraction.ocr.backend to docker')
         result = subprocess.run(['ocrmypdf', *options, str(path), str(target)],
+                                check=False,
                                 capture_output=True, text=True, timeout=3600)
     else:
         raise ValueError('extraction.ocr.backend must be docker or native')
