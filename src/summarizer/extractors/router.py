@@ -1,7 +1,8 @@
-from pathlib import Path
 import logging
+from pathlib import Path
+
+from . import builtin, docling, tika
 from .base import Extracted
-from . import builtin, tika, docling
 
 EXTRACTORS = {'builtin': builtin.extract, 'tika': tika.extract, 'docling': docling.extract}
 LOG = logging.getLogger(__name__)

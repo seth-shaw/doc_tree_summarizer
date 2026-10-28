@@ -2,11 +2,11 @@ import hashlib
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from .extractors.router import extract
 from .extractors.image import IMAGE_SUFFIXES
+from .extractors.router import extract
 from .output.html import render
 from .progress import activity
 
@@ -139,7 +139,7 @@ def run(root: Path, config: dict, cache, client, destination: Path) -> dict:
         if stat is None:
             stat = path.stat()
         node['size_bytes'] = stat.st_size
-        node['modified_date'] = datetime.fromtimestamp(stat.st_mtime, timezone.utc).date().isoformat()
+        node['modified_date'] = datetime.fromtimestamp(stat.st_mtime, UTC).date().isoformat()
         try:
             with activity(f'Hashing file: {path}'):
                 source_hash = file_hash(path)
@@ -210,7 +210,7 @@ def run(root: Path, config: dict, cache, client, destination: Path) -> dict:
                     continue
                 node['file_count'] += 1
                 node['size_bytes'] += stat.st_size
-                dates.append(datetime.fromtimestamp(stat.st_mtime, timezone.utc).date().isoformat())
+                dates.append(datetime.fromtimestamp(stat.st_mtime, UTC).date().isoformat())
                 if entry.suffix.lower().lstrip('.') in supported:
                     node['children'].append(process_file(entry, stat))
         if dates:

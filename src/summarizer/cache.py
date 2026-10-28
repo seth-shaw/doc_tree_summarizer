@@ -1,6 +1,7 @@
 import sqlite3
 from pathlib import Path
 
+
 class Cache:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)

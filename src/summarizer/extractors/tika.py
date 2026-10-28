@@ -1,6 +1,8 @@
 import urllib.request
 from pathlib import Path
+
 from .base import Extracted
+
 
 def extract(path: Path, config: dict) -> Extracted:
     if not config.get('enabled', False):

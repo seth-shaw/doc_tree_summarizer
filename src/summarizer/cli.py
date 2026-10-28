@@ -1,10 +1,13 @@
 import argparse
 import logging
 from pathlib import Path
+
 import yaml
+
 from .cache import Cache
 from .models.ollama import Ollama
 from .pipeline import run
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Summarize a document directory bottom-up with local Ollama')

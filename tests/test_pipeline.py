@@ -1,6 +1,6 @@
-from pathlib import Path
 from summarizer.cache import Cache
-from summarizer.pipeline import run, chunks, summarize_long, DOCUMENT_PROMPT
+from summarizer.pipeline import DOCUMENT_PROMPT, chunks, run, summarize_long
+
 
 class FakeModel:
     def summarize(self, model, system, content):
