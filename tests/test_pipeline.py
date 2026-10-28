@@ -1,24 +1,43 @@
+"""Tests for tree traversal, caching, and hierarchical summaries."""
+
 from summarizer.cache import Cache
-from summarizer.pipeline import DOCUMENT_PROMPT, chunks, run, summarize_long
+from summarizer.pipeline import (
+    DOCUMENT_PROMPT, SummaryContext, chunks, run, summarize_long,
+)
 
 
+# pylint: disable=too-few-public-methods
 class FakeModel:
-    def summarize(self, model, system, content):
+    """Return deterministic text while satisfying the model interface."""
+
+    def summarize(self, _model, _system, content):
+        """Return a short deterministic summary of the supplied content."""
         return 'SYNTHESIS: ' + content[:200]
 
 def test_chunks():
+    """Chunking preserves every input character."""
     assert ''.join(chunks('a' * 250, 100)) == 'a' * 250
 
+
 def test_hierarchy_and_html(tmp_path, caplog):
+    """Tree traversal summarizes supported files and reuses cached output."""
     caplog.set_level('INFO', logger='summarizer')
     root = tmp_path / 'collection'
     child = root / 'child'
     child.mkdir(parents=True)
     (child / 'one.txt').write_text('interview notes')
     (root / 'two.md').write_text('overview')
-    config = {'extraction': {'routes': {'txt': 'builtin', 'md': 'builtin'}, 'default': 'builtin', 'fallback': [], 'ocr': {}},
-              'summarization': {'document_model': 'fake', 'directory_model': 'fake-directory', 'chunk_chars': 1000,
-                                'chunk_overlap_chars': 0, 'group_chars': 1000}, 'output': {}}
+    config = {
+        'extraction': {
+            'routes': {'txt': 'builtin', 'md': 'builtin'},
+            'default': 'builtin', 'fallback': [], 'ocr': {},
+        },
+        'summarization': {
+            'document_model': 'fake', 'directory_model': 'fake-directory',
+            'chunk_chars': 1000, 'chunk_overlap_chars': 0, 'group_chars': 1000,
+        },
+        'output': {},
+    }
     cache = Cache(tmp_path / 'state.sqlite3')
     report = tmp_path / 'report.html'
     result = run(root, config, cache, FakeModel(), report)
@@ -41,30 +60,47 @@ def test_hierarchy_and_html(tmp_path, caplog):
     cache.db.commit()
     caplog.clear()
 
+    # pylint: disable=too-few-public-methods
     class CachedModel:
+        """A model that fails if a fully cached run asks it to summarize."""
+
         def summarize(self, *args):
+            """Fail if a fully cached run requests another model result."""
+            del args
             raise AssertionError('Cached runs must not call the model')
 
     assert run(root, config, cache, CachedModel(), report) == result
     assert f'Extraction cache hit: {child / "one.txt"}' in caplog.text
     assert f'Cache hit: document summary: {child / "one.txt"}' in caplog.text
     assert f'Cache hit: directory summary: {root}' in caplog.text
-    assert sorted(cache.db.execute('SELECT stage, path, filename, model FROM cache_entries').fetchall()) == sorted(metadata)
+    cached_metadata = cache.db.execute(
+        'SELECT stage, path, filename, model FROM cache_entries'
+    ).fetchall()
+    assert sorted(cached_metadata) == sorted(metadata)
     cache.close()
 
 
 def test_chunk_and_reduction_progress(tmp_path, caplog):
+    """Long documents are chunked and their partial summaries are reduced."""
     caplog.set_level('INFO', logger='summarizer')
 
+    # pylint: disable=too-few-public-methods
     class ShortModel:
+        """A model that returns the same short text for each request."""
+
         def summarize(self, *args):
+            """Return the same short text for every request."""
+            del args
             return 'Short summary'
 
     cache = Cache(tmp_path / 'cache.sqlite3')
     try:
-        answer = summarize_long('x' * 250, 'fake', DOCUMENT_PROMPT,
-                                {'chunk_chars': 100, 'chunk_overlap_chars': 0, 'group_chars': 1000},
-                                ShortModel(), cache, 'document', tmp_path / 'large.txt')
+        summary_context = SummaryContext(
+            'fake', DOCUMENT_PROMPT,
+            {'chunk_chars': 100, 'chunk_overlap_chars': 0, 'group_chars': 1000},
+            ShortModel(), cache, 'document', tmp_path / 'large.txt',
+        )
+        answer = summarize_long('x' * 250, summary_context)
         assert answer == 'Short summary'
         assert 'chunk 1/3' in caplog.text
         assert 'chunk 3/3' in caplog.text
@@ -74,10 +110,13 @@ def test_chunk_and_reduction_progress(tmp_path, caplog):
 
 
 def test_failed_file_progress(tmp_path, caplog):
+    """An extraction failure is reported in the resulting tree."""
     caplog.set_level('INFO', logger='summarizer')
     (tmp_path / 'bad.pdf').write_bytes(b'not a PDF')
-    config = {'extraction': {'routes': {'pdf': 'missing'}, 'fallback': []},
-              'summarization': {}, 'output': {}}
+    config = {
+        'extraction': {'routes': {'pdf': 'missing'}, 'fallback': []},
+        'summarization': {}, 'output': {},
+    }
     cache = Cache(tmp_path / 'state.sqlite3')
     try:
         result = run(tmp_path, config, cache, FakeModel(), tmp_path / 'report.html')

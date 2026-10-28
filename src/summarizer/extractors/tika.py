@@ -1,3 +1,5 @@
+"""Apache Tika server-backed document extractor."""
+
 import urllib.request
 from pathlib import Path
 
@@ -5,6 +7,7 @@ from .base import Extracted
 
 
 def extract(path: Path, config: dict) -> Extracted:
+    """Send a document to the configured Tika server and return its text."""
     if not config.get('enabled', False):
         raise RuntimeError('Tika is disabled')
     url = config.get('url', 'http://127.0.0.1:9998').rstrip('/') + '/tika'

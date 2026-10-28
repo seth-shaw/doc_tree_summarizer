@@ -1,3 +1,5 @@
+"""Command-line interface for the document summarizer."""
+
 import argparse
 import logging
 from pathlib import Path
@@ -10,7 +12,10 @@ from .pipeline import run
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='Summarize a document directory bottom-up with local Ollama')
+    """Parse command-line options and run a document summarization."""
+    parser = argparse.ArgumentParser(
+        description='Summarize a document directory bottom-up with local Ollama'
+    )
     parser.add_argument('directory', type=Path, help='Input directory')
     parser.add_argument('--config', type=Path, default=Path('config.yaml'))
     parser.add_argument('--output', type=Path, default=None)
@@ -19,8 +24,11 @@ def main(argv=None):
     parser.add_argument('--directory-model', help='Override directory model')
     parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format='%(asctime)s %(levelname)s %(message)s', datefmt='%H:%M:%S')
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format='%(asctime)s %(levelname)s %(message)s',
+        datefmt='%H:%M:%S',
+    )
     config = yaml.safe_load(args.config.read_text(encoding='utf-8'))
     if args.model:
         config['summarization']['document_model'] = args.model

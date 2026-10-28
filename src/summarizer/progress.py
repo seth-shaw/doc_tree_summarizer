@@ -1,3 +1,5 @@
+"""Logging helpers for long-running operations."""
+
 import logging
 import threading
 import time

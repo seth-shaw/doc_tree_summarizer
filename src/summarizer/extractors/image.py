@@ -1,3 +1,5 @@
+"""Image classification and document-image extraction helpers."""
+
 from io import BytesIO
 from pathlib import Path
 
@@ -9,6 +11,7 @@ IMAGE_SUFFIXES = {'.bmp', '.gif', '.jpeg', '.jpg', '.png', '.tif', '.tiff', '.we
 
 
 def _vision_images(path: Path, max_pages: int, max_dimension: int) -> list[bytes]:
+    """Prepare bounded, normalized images for a vision model."""
     with Image.open(path) as source:
         count = getattr(source, 'n_frames', 1)
         if count <= max_pages:
@@ -31,6 +34,7 @@ def _vision_images(path: Path, max_pages: int, max_dimension: int) -> list[bytes
 
 
 def extract(path: Path, config: dict, client) -> tuple[Extracted, str]:
+    """Classify an image and extract document text when appropriate."""
     image_config = config.get('image', {})
     model = image_config.get('model', 'qwen2.5vl:3b')
     max_pages = int(image_config.get('max_pages', 5))
@@ -39,18 +43,24 @@ def extract(path: Path, config: dict, client) -> tuple[Extracted, str]:
     max_dimension = int(image_config.get('max_dimension', 1600))
     if max_dimension < 256:
         raise ValueError('extraction.image.max_dimension must be at least 256')
-    classification = client.characterize_image(model, _vision_images(path, max_pages, max_dimension))
+    image_data = _vision_images(path, max_pages, max_dimension)
+    classification = client.characterize_image(model, image_data)
     kind = classification['kind']
     description = classification['description'].strip()
     if kind == 'scanned_document':
         result = extract_document(path, config)
         result.text = f'Image context: {description}\n\n{result.text}'
-        result.warnings.insert(0, 'Image classified as a scanned document; OCR/document extraction was applied.')
+        result.warnings.insert(
+            0,
+            'Image classified as a scanned document; OCR/document extraction was applied.',
+        )
         return result, kind
     return Extracted(f'Image description: {description}', f'ollama:{model}'), kind
 
 
 def extract_document(path: Path, config: dict) -> Extracted:
+    """Route a scanned image through the configured document extractors."""
+    # pylint: disable=import-outside-toplevel
     # Import lazily to avoid a router/image import cycle.
     from .router import extract as route_extract
     return route_extract(path, config)

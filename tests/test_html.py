@@ -1,9 +1,12 @@
+"""Tests for safe HTML report rendering."""
+
 from bs4 import BeautifulSoup
 
 from summarizer.output.html import render
 
 
 def report(tmp_path, summary, **attributes):
+    """Render a small node and parse the resulting report."""
     destination = tmp_path / 'report.html'
     node = {'type': 'file', 'name': 'notes.md', 'summary': summary, **attributes}
     render(node, destination)
@@ -11,6 +14,7 @@ def report(tmp_path, summary, **attributes):
 
 
 def test_summary_markdown(tmp_path):
+    """Markdown features render with the expected HTML elements."""
     page = report(tmp_path, '''## Findings
 
 **Important** and *uncertain* with `inline code`.
@@ -47,6 +51,7 @@ print("<example>")
 
 
 def test_untrusted_markup_and_metadata_are_escaped(tmp_path):
+    """Raw HTML and unsafe links are kept inert in generated reports."""
     page = report(tmp_path, '''<script>alert(1)</script>
 <img src="https://example.com/tracker" onerror="alert(1)">
 [click](javascript:alert%281%29)
@@ -55,13 +60,17 @@ def test_untrusted_markup_and_metadata_are_escaped(tmp_path):
 ''', name='<img src=x onerror=alert(1)>', warnings=['<script>warning</script>'])
     assert not page.select('script, img, iframe')
     assert not page.select('[onerror]')
-    assert all(not link.get('href', '').startswith(('javascript:', 'data:')) for link in page.select('a'))
+    assert all(
+        not link.get('href', '').startswith(('javascript:', 'data:'))
+        for link in page.select('a')
+    )
     assert '<script>alert(1)</script>' in page.select_one('.summary').text
     assert '<img src=x onerror=alert(1)>' in page.summary.text
     assert page.select_one('.warning').text == '<script>warning</script>'
 
 
 def test_directory_and_file_summaries_both_render_markdown(tmp_path):
+    """Directory and nested file summaries both support Markdown."""
     page = report(tmp_path, '**Directory**', type='directory', children=[
         {'type': 'file', 'name': 'child.txt', 'summary': '*File*'},
     ])
@@ -70,6 +79,7 @@ def test_directory_and_file_summaries_both_render_markdown(tmp_path):
 
 
 def test_plain_text_and_errors(tmp_path):
+    """Plain text preserves line breaks and errors stay unformatted."""
     page = report(tmp_path, 'First line\nSecond line & <literal>')
     assert page.select_one('.summary br') is not None
     assert 'Second line & <literal>' in page.select_one('.summary').text

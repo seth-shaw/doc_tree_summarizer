@@ -1,3 +1,5 @@
+"""Render a hierarchical summary as a self-contained HTML report."""
+
 import html
 from pathlib import Path
 
@@ -7,6 +9,7 @@ from markdown_it import MarkdownIt
 MARKDOWN = MarkdownIt('js-default', {'breaks': True}).disable('image')
 
 def _format_size(size: int) -> str:
+    """Format a byte count using decimal units."""
     if size < 1000:
         return f'{size:,} bytes'
     value = float(size)
@@ -14,6 +17,7 @@ def _format_size(size: int) -> str:
         value /= 1000
         if value < 1000 or unit == 'TB':
             return f'{value:.1f} {unit}'
+    return f'{value:.1f} TB'
 
 STYLE = '''
 :root {color-scheme:light dark;font-family:system-ui,-apple-system,sans-serif;line-height:1.5}
@@ -29,37 +33,62 @@ summary {cursor:pointer;font-weight:650} .summary {margin:.65rem 0 1rem;overflow
 .meta {font-size:.85rem;opacity:.7}.error {color:#b34a4a}.warning{color:#956b11} .children {margin-left:.3rem}
 '''
 
-def _node(node: dict) -> str:
-    title = html.escape(node['name'])
+def _metadata(node: dict) -> str:
+    """Render the escaped metadata fields for a summary node."""
     kind = node['type']
     status = node.get('status', 'ok')
-    text = node.get('summary', '')
-    message = MARKDOWN.render(text) if status == 'ok' else html.escape(text)
-    notes = ''.join(f'<p class="warning">{html.escape(note)}</p>' for note in node.get('warnings', []))
     image_kind = node.get('image_kind')
     image_label = f', image: {html.escape(image_kind)}' if image_kind else ''
-    directory_stats = ''
+    extra = ''
     if kind == 'directory' and 'file_count' in node:
         modified_range = node.get('modified_range')
-        dates = f', modified {html.escape(modified_range[0])} – {html.escape(modified_range[1])}' if modified_range else ', no file dates'
-        directory_stats = (f', {node["file_count"]} files, {_format_size(node["size_bytes"])}{dates}')
-    file_metadata = ''
-    if kind == 'file' and 'size_bytes' in node:
+        dates = (
+            f', modified {html.escape(modified_range[0])} through '
+            f'{html.escape(modified_range[1])}'
+            if modified_range else ', no file dates'
+        )
+        extra = (
+            f', {node["file_count"]} files, '
+            f'{_format_size(node["size_bytes"])}{dates}'
+        )
+    elif kind == 'file' and 'size_bytes' in node:
         modified_date = html.escape(node['modified_date'])
-        file_metadata = f', {_format_size(node["size_bytes"])}, modified {modified_date}'
-    label = f'{title} <span class="meta">({kind}, {status}{image_label}{directory_stats}{file_metadata})</span>'
+        extra = f', {_format_size(node["size_bytes"])}, modified {modified_date}'
+    return f'({kind}, {status}{image_label}{extra})'
+
+
+def _node(node: dict) -> str:
+    """Render one summary node and all its children."""
+    title = html.escape(node['name'])
+    status = node.get('status', 'ok')
+    summary = node.get('summary', '')
+    message = MARKDOWN.render(summary) if status == 'ok' else html.escape(summary)
+    notes = ''.join(
+        f'<p class="warning">{html.escape(note)}</p>'
+        for note in node.get('warnings', [])
+    )
+    label = f'{title} <span class="meta">{_metadata(node)}</span>'
     children = ''.join(_node(child) for child in node.get('children', []))
     error_class = ' error' if status != 'ok' else ''
-    return f'<details><summary>{label}</summary><div class="summary{error_class}">{message}</div>{notes}<div class="children">{children}</div></details>'
+    return (
+        f'<details><summary>{label}</summary>'
+        f'<div class="summary{error_class}">{message}</div>{notes}'
+        f'<div class="children">{children}</div></details>'
+    )
 
 def render(root: dict, destination: Path):
+    """Write the rendered report atomically to *destination*."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     page = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             '<title>Local AI Document Summaries</title><style>' + STYLE + '</style></head><body>'
-            '<header><h1>Document summaries</h1><button onclick="document.querySelectorAll(\'details\').forEach(x=>x.open=true)">Expand all</button>'
-            '<button onclick="document.querySelectorAll(\'details\').forEach(x=>x.open=false)">Collapse all</button></header>'
-            '<p class="meta">Generated locally. Summaries may contain errors; verify against source documents.</p>'
+            '<header><h1>Document summaries</h1>'
+            '<button onclick="document.querySelectorAll(\'details\').forEach(x=>x.open=true)">'
+            'Expand all</button>'
+            '<button onclick="document.querySelectorAll(\'details\').forEach(x=>x.open=false)">'
+            'Collapse all</button></header>'
+            '<p class="meta">Generated locally. Summaries may contain errors; '
+            'verify against source documents.</p>'
             + _node(root) + '</body></html>')
     temp = destination.with_name(destination.name + '.tmp')
     temp.write_text(page, encoding='utf-8')
