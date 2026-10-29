@@ -1,3 +1,5 @@
+"""Tests for progress activity reporting."""
+
 import threading
 
 import pytest
@@ -6,12 +8,14 @@ from summarizer import progress
 
 
 def test_activity_heartbeat_and_cleanup(monkeypatch, caplog):
+    """Verify activity heartbeats and worker cleanup."""
     caplog.set_level('INFO', logger='summarizer')
     heartbeat_seen = threading.Event()
     original_info = progress.LOG.info
     workers_before = set(threading.enumerate())
 
     def info(message, *args):
+        """Info."""
         original_info(message, *args)
         if message.startswith('Still working:'):
             heartbeat_seen.set()
@@ -26,6 +30,7 @@ def test_activity_heartbeat_and_cleanup(monkeypatch, caplog):
 
 
 def test_activity_failure_is_reported_and_propagated(caplog):
+    """Verify activity failures are logged and propagated."""
     caplog.set_level('INFO', logger='summarizer')
     workers_before = set(threading.enumerate())
     with pytest.raises(RuntimeError, match='model unavailable'):

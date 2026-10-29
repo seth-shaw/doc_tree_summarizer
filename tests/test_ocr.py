@@ -1,4 +1,7 @@
+"""Tests for PDF OCR backend invocation."""
+
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,11 +10,18 @@ from unittest.mock import patch
 from summarizer.extractors import builtin
 
 
+# These tests intentionally call the private backend runner to assert its exact
+# command construction, stream handling, and failure reporting.
+# pylint: disable=protected-access
 class OCRTests(unittest.TestCase):
+    """Exercise OCR command construction and error handling."""
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.addCleanup(self.directory.cleanup)
-        self.root = Path(self.directory.name).resolve()
+        """Create temporary inputs used by the OCR tests."""
+        # Keep the temporary directory alive for the full test and clean it up
+        # through unittest's cleanup stack after the test finishes.
+        self.directory = self.enterContext(
+            tempfile.TemporaryDirectory())  # pylint: disable=consider-using-with
+        self.root = Path(self.directory).resolve()
         self.source = self.root / 'source with spaces.pdf'
         self.source.write_bytes(b'%PDF-input\x00\xff')
         self.target = self.root / 'output.pdf'
@@ -20,18 +30,21 @@ class OCRTests(unittest.TestCase):
 
     @patch.object(builtin.shutil, 'which', return_value='/bin/docker')
     def test_docker_streams_binary_pdf_and_preserves_options(self, which):
+        """Verify Docker OCR streams PDF bytes and keeps options."""
         original_run = subprocess.run
 
         def run(command, **kwargs):
+            """Mirror the real OCR subprocess with a byte-preserving child process."""
             self.assertEqual(command[:9], ['docker', 'compose', '-f', str(self.compose),
-                                          'run', '--rm', '--no-deps', '-T', 'ocrmypdf'])
+                                           'run', '--rm', '--no-deps', '-T', 'ocrmypdf'])
             self.assertEqual(command[-2:], ['-', '-'])
             self.assertIn('--skip-text', command)
             self.assertIn('eng+fra', command)
             # Exercise real binary stdin/stdout handles, including non-UTF-8 bytes.
-            import sys
+            kwargs.pop('check', None)
             return original_run([sys.executable, '-c',
-                                 'import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())'], **kwargs)
+                                 'import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())'],
+                                check=False, **kwargs)
 
         with patch.object(builtin.subprocess, 'run', side_effect=run):
             builtin._ocr_pdf(self.source, self.target,
@@ -40,8 +53,11 @@ class OCRTests(unittest.TestCase):
         which.assert_called_once_with('docker')
 
     @patch.object(builtin.shutil, 'which', return_value='/bin/docker')
-    @patch.object(builtin.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stderr=''))
-    def test_default_compose_path_and_forced_ocr(self, run, which):
+    @patch.object(
+        builtin.subprocess, 'run',
+        return_value=subprocess.CompletedProcess([], 0, stderr=''))
+    def test_default_compose_path_and_forced_ocr(self, run, _which):
+        """Verify the default Compose file and forced OCR options."""
         builtin._ocr_pdf(self.source, self.target, {}, 'always')
         command = run.call_args.args[0]
         self.assertEqual(Path(command[3]), Path(__file__).resolve().parents[1] / 'compose.yaml')
@@ -49,8 +65,11 @@ class OCRTests(unittest.TestCase):
         self.assertNotIn('--skip-text', command)
 
     @patch.object(builtin.shutil, 'which', return_value='/bin/ocrmypdf')
-    @patch.object(builtin.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stderr=''))
+    @patch.object(
+        builtin.subprocess, 'run',
+        return_value=subprocess.CompletedProcess([], 0, stderr=''))
     def test_native_backend(self, run, which):
+        """Verify the native OCR command and input paths."""
         builtin._ocr_pdf(self.source, self.target, {'backend': 'native'}, 'auto')
         command = run.call_args.args[0]
         self.assertEqual(command[0], 'ocrmypdf')
@@ -58,22 +77,29 @@ class OCRTests(unittest.TestCase):
         which.assert_called_once_with('ocrmypdf')
 
     @patch.object(builtin.shutil, 'which', return_value=None)
-    def test_missing_executable(self, which):
+    def test_missing_executable(self, _which):
+        """Verify missing OCR executables produce useful errors."""
         for backend, message in [('docker', 'Docker'), ('native', 'native ocrmypdf')]:
             with self.subTest(backend=backend), self.assertRaisesRegex(RuntimeError, message):
                 builtin._ocr_pdf(self.source, self.target, {'backend': backend}, 'auto')
 
     @patch.object(builtin.shutil, 'which', return_value='/bin/docker')
-    def test_missing_compose_file(self, which):
+    def test_missing_compose_file(self, _which):
+        """Verify a missing Compose file produces a useful error."""
         with self.assertRaisesRegex(RuntimeError, 'extraction.ocr.compose_file'):
-            builtin._ocr_pdf(self.source, self.target, {'compose_file': str(self.root / 'missing')}, 'auto')
+            builtin._ocr_pdf(self.source, self.target, {
+                             'compose_file': str(self.root / 'missing')}, 'auto')
 
     def test_invalid_backend(self):
+        """Verify an unsupported OCR backend is rejected."""
         with self.assertRaisesRegex(ValueError, 'extraction.ocr.backend'):
             builtin._ocr_pdf(self.source, self.target, {'backend': 'unknown'}, 'auto')
 
     @patch.object(builtin.shutil, 'which', return_value='/bin/docker')
-    @patch.object(builtin.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, stderr='engine unavailable'))
-    def test_docker_failure_includes_diagnostics(self, run, which):
+    @patch.object(
+        builtin.subprocess, 'run',
+        return_value=subprocess.CompletedProcess([], 1, stderr='engine unavailable'))
+    def test_docker_failure_includes_diagnostics(self, _run, _which):
+        """Verify OCR failure diagnostics are included in the error."""
         with self.assertRaisesRegex(RuntimeError, 'OCR failed: engine unavailable'):
             builtin._ocr_pdf(self.source, self.target, {'compose_file': str(self.compose)}, 'auto')

@@ -1,3 +1,5 @@
+"""Progress activity logging and heartbeat support."""
+
 import logging
 import threading
 import time
@@ -13,6 +15,7 @@ def activity(description: str, interval: float = 60):
     stopped = threading.Event()
 
     def heartbeat():
+        """Heartbeat."""
         while not stopped.wait(interval):
             LOG.info('Still working: %s (%.1fs elapsed)', description, time.monotonic() - started)
 
