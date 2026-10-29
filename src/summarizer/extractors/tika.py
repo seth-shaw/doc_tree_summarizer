@@ -1,8 +1,13 @@
+"""Apache Tika based document extraction."""
+
 import urllib.request
 from pathlib import Path
+
 from .base import Extracted
 
+
 def extract(path: Path, config: dict) -> Extracted:
+    """Extract text from a file using its configured format handler."""
     if not config.get('enabled', False):
         raise RuntimeError('Tika is disabled')
     url = config.get('url', 'http://127.0.0.1:9998').rstrip('/') + '/tika'
