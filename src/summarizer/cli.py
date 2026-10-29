@@ -14,8 +14,12 @@ def main(argv=None):
     parser.add_argument('--database', type=Path, default=Path('state/cache.sqlite3'))
     parser.add_argument('--model', help='Override document model')
     parser.add_argument('--directory-model', help='Override directory model')
+    parser.add_argument('--sample', type=int, default=100, metavar='PERCENT',
+                        help='Randomly summarize this percentage of files in each directory (0-100; default: 100)')
     parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args(argv)
+    if not 0 <= args.sample <= 100:
+        parser.error('--sample must be between 0 and 100')
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format='%(asctime)s %(levelname)s %(message)s', datefmt='%H:%M:%S')
     config = yaml.safe_load(args.config.read_text(encoding='utf-8'))
@@ -26,7 +30,7 @@ def main(argv=None):
     output = args.output or Path(config.get('output', {}).get('html', 'summary.html'))
     cache = Cache(args.database)
     try:
-        result = run(args.directory, config, cache, Ollama(config['summarization']), output)
+        result = run(args.directory, config, cache, Ollama(config['summarization']), output, sample=args.sample)
     finally:
         cache.close()
     print(f'Report: {output.resolve()}')

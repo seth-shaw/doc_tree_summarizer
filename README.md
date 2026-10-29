@@ -26,18 +26,19 @@ A resumable, bottom-up document summarizer using text extraction and local-AI ge
 uv run summarizer "$HOME/Documents/MyCollection" \
   --config config.yaml \
   --output "$HOME/local-ai-results/summary.html" \
-  --database "$HOME/local-ai-results/cache.sqlite3"
+  --database "$HOME/local-ai-results/cache.sqlite3" \
+  --sample 50
 ```
 
 Open the resulting `summary.html` in a browser. No server is needed. Expand or collapse any directory or file, or use the Expand all / Collapse all buttons.
 
-Use `uv run summarizer --help` for additional flags. Use `--model qwen3:14b --directory-model qwen3:32b` to override the YAML models.
+Use `uv run summarizer --help` for additional flags. `--sample` accepts an integer from 0 to 100 and defaults to 100. It randomly selects that percentage of supported files in each directory for extraction and document summarization; directories still receive every immediate filename and file type, plus summaries of sampled files and child directories. Use `--sample 0` for directory summaries based on that inventory and child directory summaries. Use `--model qwen3:14b --directory-model qwen3:32b` to override the YAML models.
 
 Progress is logged to stderr by default with timestamps: the current directory and file, hashing and extraction stages, extractor attempts, cache hits, model name, chunk counts, reduction rounds, and completion times. Operations taking longer than 60 seconds print a "Still working" message with the active path and elapsed time, repeated every 60 seconds. Ollama retries are logged, and the final message includes processed file, failure, and completed directory counts. Add `--verbose` for debug logging. To keep a log while watching progress, append `2>&1 | tee summarizer.log` to your command.
 
 ## How the hierarchy works
 
-Every supported file is extracted and summarized. Each directory is summarized from **only its immediate file summaries and immediate subdirectory summaries**, not from all descendant source text. Directories are processed bottom-up. For long inputs, chunk summaries are recursively reduced so the model receives bounded text.
+At the default sample level of 100, every supported file is extracted and summarized. Each directory is summarized from **only its immediate file inventory (filenames and types, with summaries for sampled files) and immediate subdirectory summaries**, not from all descendant source text. Directories are processed bottom-up. For long inputs, chunk summaries are recursively reduced so the model receives bounded text.
 
 Each directory entry in the HTML report also shows a programmatically calculated count and total size for all regular files beneath it, plus the earliest and latest file modification dates in UTC. Each summarized file shows its size and modification date. Sizes use bytes below 1 KB and scale through KB, MB, GB, and TB using 1,000 bytes per unit. Symlinks and the generated report are excluded; files without a configured extraction route still count toward directory totals.
 

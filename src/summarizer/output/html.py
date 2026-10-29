@@ -35,6 +35,7 @@ def _node(node: dict) -> str:
     status = node.get('status', 'ok')
     text = node.get('summary', '')
     message = MARKDOWN.render(text) if status == 'ok' else html.escape(text)
+    summary_html = f'<div class="summary{(" error" if status != "ok" else "")}">{message}</div>' if text else ''
     notes = ''.join(f'<p class="warning">{html.escape(note)}</p>' for note in node.get('warnings', []))
     image_kind = node.get('image_kind')
     image_label = f', image: {html.escape(image_kind)}' if image_kind else ''
@@ -46,20 +47,22 @@ def _node(node: dict) -> str:
     file_metadata = ''
     if kind == 'file' and 'size_bytes' in node:
         modified_date = html.escape(node['modified_date'])
-        file_metadata = f', {_format_size(node["size_bytes"])}, modified {modified_date}'
+        sample_status = ', skipped by sampling' if node.get('sampled_out') else ''
+        file_metadata = f', {_format_size(node["size_bytes"])}, modified {modified_date}{sample_status}'
     label = f'{title} <span class="meta">({kind}, {status}{image_label}{directory_stats}{file_metadata})</span>'
     children = ''.join(_node(child) for child in node.get('children', []))
-    error_class = ' error' if status != 'ok' else ''
-    return f'<details><summary>{label}</summary><div class="summary{error_class}">{message}</div>{notes}<div class="children">{children}</div></details>'
+    return f'<details><summary>{label}</summary>{summary_html}{notes}<div class="children">{children}</div></details>'
 
-def render(root: dict, destination: Path):
+def render(root: dict, destination: Path, sample: int = 100):
     destination.parent.mkdir(parents=True, exist_ok=True)
+    sample_note = f'<p class="meta">Sample level: {sample}%</p>' if sample != 100 else ''
     page = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             '<title>Local AI Document Summaries</title><style>' + STYLE + '</style></head><body>'
             '<header><h1>Document summaries</h1><button onclick="document.querySelectorAll(\'details\').forEach(x=>x.open=true)">Expand all</button>'
             '<button onclick="document.querySelectorAll(\'details\').forEach(x=>x.open=false)">Collapse all</button></header>'
             '<p class="meta">Generated locally. Summaries may contain errors; verify against source documents.</p>'
+            + sample_note
             + _node(root) + '</body></html>')
     temp = destination.with_name(destination.name + '.tmp')
     temp.write_text(page, encoding='utf-8')
