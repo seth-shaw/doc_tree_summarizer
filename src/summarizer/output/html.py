@@ -62,7 +62,7 @@ def _label(node: dict) -> str:
     if kind == 'directory' and 'file_count' in node:
         modified_range = node.get('modified_range')
         if modified_range:
-            date_range = f'{html.escape(modified_range[0])} ? {html.escape(modified_range[1])}'
+            date_range = f'{html.escape(modified_range[0])} / {html.escape(modified_range[1])}'
             dates = f', modified {date_range}'
         else:
             dates = ', no file dates'
