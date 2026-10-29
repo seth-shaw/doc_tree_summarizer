@@ -28,6 +28,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not 0 <= args.sample <= 100:
         parser.error('--sample must be between 0 and 100')
+    args.directory = args.directory.expanduser()
+    if not args.directory.exists():
+        parser.error(f'input directory does not exist: {args.directory}')
+    if not args.directory.is_dir():
+        parser.error(f'input path is not a directory: {args.directory}')
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format='%(asctime)s %(levelname)s %(message)s', datefmt='%H:%M:%S')
     config = yaml.safe_load(args.config.read_text(encoding='utf-8'))
