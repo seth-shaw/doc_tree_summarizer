@@ -48,7 +48,16 @@ def extract(path: Path, config: dict, client) -> tuple[Extracted, str]:
     kind = classification['kind']
     description = classification['description'].strip()
     if kind == 'scanned_document':
-        result = extract_document(path, config)
+        try:
+            result = extract_document(path, config)
+        except RuntimeError as exc:
+            warning = (
+                'Image classified as a scanned document, but text extraction failed: '
+                f'{exc}')
+            return Extracted(
+                f'Image description: {description}',
+                f'ollama:{model}',
+                [warning]), kind
         result.text = f'Image context: {description}\n\n{result.text}'
         result.warnings.insert(
             0, 'Image classified as a scanned document; OCR/document extraction was applied.')

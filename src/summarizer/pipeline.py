@@ -9,15 +9,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import NamedTuple
 
-import defity
+import filetype
 
-from .extractors.image import extract as extract_image
+from .extractors.image import IMAGE_SUFFIXES, extract as extract_image
 from .extractors.router import extract
 from .output.html import render
 from .progress import activity
 
 LOG = logging.getLogger(__name__)
-VERSION = 'pipeline-v4'
+VERSION = 'pipeline-v5'
 
 
 class _FileStat(NamedTuple):
@@ -48,10 +48,16 @@ REDUCE_PROMPT = (
 def _get_mime(path: Path) -> str | None:
     """Detect a file's MIME type from its contents."""
     try:
-        return defity.from_file(str(path))
+        kind = filetype.guess(str(path))
+        return kind.mime if kind else None
     except Exception as exc:  # pylint: disable=broad-exception-caught
         LOG.debug('Could not detect file type for %s: %s', path, exc)
         return None
+
+
+def _is_image(path: Path, mime: str | None) -> bool:
+    """Recognize images by MIME type, falling back to known image extensions."""
+    return bool((mime and mime.startswith('image/')) or path.suffix.lower() in IMAGE_SUFFIXES)
 
 
 def digest(value) -> str:
@@ -217,7 +223,7 @@ class _RunContext:
             cached = self.cache.get('extraction', extraction_key, path=path)
             if cached is None:
                 with activity(f'Extracting file: {path}'):
-                    if stat.mime and stat.mime.startswith('image/'):
+                    if _is_image(path, stat.mime):
                         result, image_kind = extract_image(path, extraction_cfg, self.client)
                     else:
                         result = extract(path, extraction_cfg)
@@ -301,7 +307,7 @@ class _RunContext:
                 node['size_bytes'] += stat.size_bytes
                 dates.append(datetime.fromtimestamp(stat.mtime, UTC).date().isoformat())
                 suffix = entry.suffix.lower()
-                is_image = bool(stat.mime and stat.mime.startswith('image/'))
+                is_image = _is_image(entry, stat.mime)
                 file_type = stat.mime if stat.mime and not suffix else (suffix or 'no extension')
                 inventory_item = {'name': entry.name, 'type': file_type, 'summary': None}
                 file_inventory.append(inventory_item)
