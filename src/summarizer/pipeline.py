@@ -193,8 +193,10 @@ class _RunContext:
         started = time.monotonic()
         LOG.info('Processing document tree: %s', root)
         result = self.process_dir(root)
+        processing_runtime = time.monotonic() - started
         with activity(f'Writing HTML report: {self.destination.resolve()}'):
-            render(result, self.destination, sample=self.sample)
+            render(result, self.destination, sample=self.sample,
+                   runtime_seconds=processing_runtime)
         LOG.info(
             'Run complete: %d files processed, %d files failed, '
             '%d directories completed (%.1fs)',

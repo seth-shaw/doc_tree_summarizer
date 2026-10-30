@@ -76,7 +76,7 @@ Extraction rows have a NULL model because extraction does not use a summarizatio
 
 ## Output
 
-The output HTML renders summary Markdown as headings, lists, emphasis, tables, links, and code blocks. Filenames, warnings, and raw HTML in summaries are escaped; unsafe link schemes and embedded images are disabled. The report has no external assets or JavaScript dependencies. 
+The output HTML renders summary Markdown as headings, lists, emphasis, tables, links, and code blocks. It includes the processing runtime. Filenames, warnings, and raw HTML in summaries are escaped; unsafe link schemes and embedded images are disabled. The report has no external assets or JavaScript dependencies.
 
 ## Safety and privacy
 
