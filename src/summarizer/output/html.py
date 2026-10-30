@@ -21,6 +21,14 @@ def _format_size(size: int) -> str:
     return f'{value:.1f} TB'
 
 
+def _format_duration(seconds: float) -> str:
+    """Format a processing duration for report metadata."""
+    if seconds < 60:
+        return f'{seconds:.1f} seconds'
+    minutes, remaining = divmod(int(seconds), 60)
+    return f'{minutes} min {remaining} sec'
+
+
 STYLE = '''
 :root {
   color-scheme: light dark;
@@ -94,10 +102,15 @@ def _node(node: dict) -> str:
         f'<details><summary>{label}</summary>{summary_html}{notes}'
         f'<div class="children">{children}</div></details>')
 
-def render(root: dict, destination: Path, sample: int = 100):
+def render(root: dict, destination: Path, sample: int = 100,
+           runtime_seconds: float | None = None):
     """Write a complete standalone HTML summary report."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     sample_note = f'<p class="meta">Sample level: {sample}%</p>' if sample != 100 else ''
+    runtime_note = (
+        f'<p class="meta">Processing runtime: '
+        f'{_format_duration(runtime_seconds)}</p>'
+        if runtime_seconds is not None else '')
     page = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             '<title>Local AI Document Summaries</title><style>' + STYLE + '</style></head><body>'
@@ -109,6 +122,7 @@ def render(root: dict, destination: Path, sample: int = 100):
             '<p class="meta">Generated locally. Summaries may contain errors; '
             'verify against source documents.</p>'
             + sample_note
+            + runtime_note
             + _node(root) + '</body></html>')
     temp = destination.with_name(destination.name + '.tmp')
     temp.write_text(page, encoding='utf-8')
