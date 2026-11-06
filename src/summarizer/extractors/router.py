@@ -10,10 +10,20 @@ EXTRACTORS = {'builtin': builtin.extract, 'tika': tika.extract, 'docling': docli
 LOG = logging.getLogger(__name__)
 
 
-def extract(path: Path, config: dict) -> Extracted:
-    """Extract text from a file using its configured format handler."""
+def extract(path: Path, config: dict, mime: str | None = None) -> Extracted:
+    """Extract text using a detected media type, then configured fallbacks.
+
+    Route keys may be media types (for example ``application/pdf``) or file
+    extensions. Media type routes take precedence when detection recognizes a
+    configured type; extensions remain useful for formats the detector cannot
+    identify, such as plain text and some archive-based office formats.
+    """
     suffix = path.suffix.lower().lstrip('.')
-    primary = config.get('routes', {}).get(suffix, config.get('default', 'builtin'))
+    routes = config.get('routes', {})
+    if mime:
+        primary = routes.get(mime, config.get('default', 'tika'))
+    else:
+        primary = routes.get(suffix, config.get('default', 'tika'))
     candidates = list(dict.fromkeys([primary] + list(config.get('fallback', []))))
     errors = []
     for name in candidates:

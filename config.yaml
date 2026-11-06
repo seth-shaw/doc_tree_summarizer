@@ -1,6 +1,25 @@
 extraction:
-  default: builtin
+  default: tika
   routes:
+    # Content-detected media types take precedence over extension routes.
+    application/pdf: docling
+    application/epub+zip: docling
+    application/vnd.openxmlformats-officedocument.wordprocessingml.document: docling
+    application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: docling
+    application/vnd.openxmlformats-officedocument.presentationml.presentation: docling
+    application/vnd.oasis.opendocument.text: docling
+    application/vnd.oasis.opendocument.spreadsheet: docling
+    application/vnd.oasis.opendocument.presentation: docling
+    application/msword: tika
+    application/vnd.ms-excel: tika
+    application/vnd.ms-powerpoint: tika
+    application/rtf: tika
+    image/bmp: docling
+    image/gif: docling
+    image/jpeg: docling
+    image/png: docling
+    image/tiff: docling
+    image/webp: docling
     # Docling document formats (requires uv sync --python 3.12 --extra docling).
     # PDF/image OCR uses Docling with the local Tesseract CLI.
     pdf: docling
