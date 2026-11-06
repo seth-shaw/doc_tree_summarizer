@@ -17,7 +17,7 @@ from .output.html import render
 from .progress import activity
 
 LOG = logging.getLogger(__name__)
-VERSION = 'pipeline-v5'
+VERSION = 'pipeline-v6'
 
 
 class _FileStat(NamedTuple):
@@ -56,7 +56,7 @@ def _get_mime(path: Path) -> str | None:
 
 
 def _is_image(path: Path, mime: str | None) -> bool:
-    """Recognize images by MIME type, falling back to known image extensions."""
+    """Recognize images from their detected media type or known suffix."""
     return bool((mime and mime.startswith('image/')) or path.suffix.lower() in IMAGE_SUFFIXES)
 
 
@@ -307,9 +307,10 @@ class _RunContext:
             if cached is None:
                 with activity(f'Extracting file: {path}'):
                     if _is_image(path, stat.mime):
-                        result, image_kind = extract_image(path, extraction_cfg, self.client)
+                        result, image_kind = extract_image(
+                            path, extraction_cfg, self.client, stat.mime)
                     else:
-                        result = extract(path, extraction_cfg)
+                        result = extract(path, extraction_cfg, stat.mime)
                         image_kind = None
                 data = {'text': result.text, 'extractor': result.extractor,
                         'warnings': result.warnings}
@@ -351,6 +352,7 @@ class _RunContext:
         extraction_cfg = self.config['extraction']
         summarization_cfg = self.config['summarization']
         supported = set(extraction_cfg.get('routes', {}))
+        has_catchall = extraction_cfg.get('default') not in (None, 'builtin')
         excluded = {self.destination.resolve()}
         directory_started = time.monotonic()
         LOG.info('Entering directory: %s', path)
@@ -395,10 +397,10 @@ class _RunContext:
                 file_type = stat.mime if stat.mime and not suffix else (suffix or 'no extension')
                 inventory_item = {'name': entry.name, 'type': file_type, 'summary': None}
                 file_inventory.append(inventory_item)
-                # Route extensionless files through the configured default and
-                # fallback extractors; the extractor router can identify their
-                # format from the file contents.
-                if suffix.lstrip('.') in supported or is_image or not suffix:
+                # Include files selected by a detected media type, configured
+                # extension, image detection, or the catch-all extractor.
+                if (suffix.lstrip('.') in supported or stat.mime in supported
+                        or is_image or not suffix or has_catchall):
                     supported_files.append((entry, stat, inventory_item))
         if file_inventory and not supported_files:
             LOG.warning(

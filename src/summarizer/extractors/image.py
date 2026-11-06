@@ -33,7 +33,7 @@ def _vision_images(path: Path, max_pages: int, max_dimension: int) -> list[bytes
         return images
 
 
-def extract(path: Path, config: dict, client) -> tuple[Extracted, str]:
+def extract(path: Path, config: dict, client, mime: str | None = None) -> tuple[Extracted, str]:
     """Extract text from a file using its configured format handler."""
     image_config = config.get('image', {})
     model = image_config.get('model', 'qwen2.5vl:3b')
@@ -49,7 +49,7 @@ def extract(path: Path, config: dict, client) -> tuple[Extracted, str]:
     description = classification['description'].strip()
     if kind == 'scanned_document':
         try:
-            result = extract_document(path, config)
+            result = extract_document(path, config, mime)
         except RuntimeError as exc:
             warning = (
                 'Image classified as a scanned document, but text extraction failed: '
@@ -65,9 +65,9 @@ def extract(path: Path, config: dict, client) -> tuple[Extracted, str]:
     return Extracted(f'Image description: {description}', f'ollama:{model}'), kind
 
 
-def extract_document(path: Path, config: dict) -> Extracted:
+def extract_document(path: Path, config: dict, mime: str | None = None) -> Extracted:
     # Import lazily to avoid a router/image import cycle.
     """Route a scanned image through document extraction."""
     # pylint: disable=import-outside-toplevel
     from .router import extract as route_extract
-    return route_extract(path, config)
+    return route_extract(path, config, mime)
