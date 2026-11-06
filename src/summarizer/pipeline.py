@@ -67,6 +67,27 @@ def digest(value) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def _directory_output_limit(config: dict) -> int:
+    """Reserve part of the configured output budget for a complete ending."""
+    configured_limit = int(config.get('max_output_tokens', 1200))
+    return max(1, configured_limit * 3 // 4)
+
+
+def _directory_prompt(config: dict, skim: bool) -> str:
+    """Build directory guidance that fits the model's output-token limit."""
+    limit = _directory_output_limit(config)
+    prompt = DIRECTORY_PROMPT + (
+        f' Keep the complete response within {limit} output tokens. Prioritize the most '
+        'important themes and findings; omit less important detail when needed. End with a '
+        'complete sentence rather than continuing beyond the response limit.')
+    if skim:
+        prompt += (
+            '\nFile summaries may be based only on selected portions of their source documents. '
+            'Treat their evidence as partial, and do not imply that the unreviewed portions were '
+            'analyzed.')
+    return prompt
+
+
 def file_hash(path: Path) -> str:
     """Hash a file incrementally without loading it all into memory."""
     h = hashlib.sha256()
@@ -97,12 +118,50 @@ def chunks(text: str, limit: int, overlap: int = 0) -> list[str]:
     return result
 
 
+class _SkimOptions(NamedTuple):
+    """Store the quick-summary settings for one run."""
+    enabled: bool
+    factor: int | None
+
+
+def _summarize_chunks(parts: list[str], prompt: str, options: _SkimOptions,
+                      cached_call, context: str) -> list[str]:
+    """Summarize the selected document chunks."""
+    skim, skim_factor = options
+    selected = list(enumerate(parts))
+    if skim:
+        selected = selected[:1] if skim_factor is None else selected[::skim_factor]
+        factor_note = f', factor {skim_factor}' if skim_factor is not None else ''
+        LOG.info('Skimming %s (summarizing %d of %d chunks%s)',
+                 context, len(selected), len(parts), factor_note)
+    instruction = prompt
+    if skim and len(selected) < len(parts):
+        instruction += (
+            '\nThis quick summary is based only on a subset of the document. '
+            'Do not imply that unreviewed portions were analyzed.')
+    return [
+        cached_call(
+            instruction + (f'\nThis is chunk {index + 1} of {len(parts)}.'
+                           if len(parts) > 1 else ''),
+            part, 'single' if len(parts) == 1 else f'chunk-{index}',
+            f'chunk {index + 1}/{len(parts)}')
+        for index, part in selected]
+
+
 # Explicit dependencies keep chunking reusable and make cache/model behavior
 # testable without module-level state.
 # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 def summarize_long(text: str, model: str, prompt: str, config: dict, client, cache, stage: str,
-                   path: Path | None = None) -> str:
-    """Summarize long text in chunks and recursively reduce the results."""
+                   path: Path | None = None, skim: bool = False,
+                   skim_factor: int | None = None) -> str:
+    """Summarize long text in chunks and recursively reduce the results.
+
+    In skim mode, summarize only the first chunk by default. When
+    ``skim_factor`` is provided, summarize every Nth chunk starting with the
+    first, reducing only those partial summaries.
+    """
+    if skim_factor is not None and (not isinstance(skim_factor, int) or skim_factor < 2):
+        raise ValueError('skim_factor must be an integer greater than or equal to 2')
     limit = int(config.get('chunk_chars', 14000))
     overlap = int(config.get('chunk_overlap_chars', 500))
     parts = chunks(text, limit, overlap)
@@ -121,13 +180,15 @@ def summarize_long(text: str, model: str, prompt: str, config: dict, client, cac
             answer = client.summarize(model, instruction, body)
         cache.put(stage, key, answer, path=path, model=model, part=label)
         return answer
-    if len(parts) == 1:
-        return cached_call(prompt, parts[0], 'single', 'chunk 1/1')
-    summaries = [
-        cached_call(
-            prompt + f'\nThis is chunk {i + 1} of {len(parts)}.', part,
-            f'chunk-{i}', f'chunk {i + 1}/{len(parts)}')
-        for i, part in enumerate(parts)]
+
+    reduction_prompt = REDUCE_PROMPT
+    if stage == 'directory':
+        reduction_prompt += (
+            f' Keep the complete result within {_directory_output_limit(config)} output tokens. '
+            'Prioritize the most important findings, omit less important detail when needed, '
+            'and end with a complete sentence.')
+    summaries = _summarize_chunks(
+        parts, prompt, _SkimOptions(skim, skim_factor), cached_call, context)
     # Recursive bounded reduction: never send all chunks at once if the combined text is too long.
     round_number = 0
     while len(summaries) > 1:
@@ -156,11 +217,11 @@ def summarize_long(text: str, model: str, prompt: str, config: dict, client, cac
             if len(combined) > group_limit:
                 suffix = f'reduce-truncated-{digest(combined)}'
                 next_round.append(cached_call(
-                    REDUCE_PROMPT, combined[:group_limit], suffix, label))
+                    reduction_prompt, combined[:group_limit], suffix, label))
             elif len(group) == 1 and len(grouped) > 1:
                 next_round.append(group[0])
             else:
-                next_round.append(cached_call(REDUCE_PROMPT, combined,
+                next_round.append(cached_call(reduction_prompt, combined,
                                   f'reduce-{digest(combined)}', label))
         if len(next_round) >= len(summaries):
             # Bound progress by pairing consecutive summaries, even if they are long.
@@ -171,7 +232,7 @@ def summarize_long(text: str, model: str, prompt: str, config: dict, client, cac
                     f'reduction round {round_number}, pair '
                     f'{i // 2 + 1}/{(len(summaries) + 1) // 2}')
                 next_round.append(cached_call(
-                    REDUCE_PROMPT, pair[:group_limit], f'pair-{digest(pair)}', pair_label))
+                    reduction_prompt, pair[:group_limit], f'pair-{digest(pair)}', pair_label))
         summaries = next_round
     return summaries[0]
 
@@ -179,13 +240,15 @@ def summarize_long(text: str, model: str, prompt: str, config: dict, client, cac
 class _RunContext:
     """Hold dependencies and counters for one document tree traversal."""
 
-    def __init__(self, config: dict, cache, client, destination: Path, sample: int):
+    def __init__(self, config: dict, cache, client, destination: Path, sample: int,
+                 skim: bool, skim_factor: int | None):
         """Store the dependencies shared by this run's workers."""
         self.config = config
         self.cache = cache
         self.client = client
         self.destination = destination
         self.sample = sample
+        self.skim_options = _SkimOptions(skim, skim_factor)
         self.progress = {'files_completed': 0, 'files_failed': 0, 'directories_completed': 0}
 
     def execute(self, root: Path) -> dict:
@@ -246,7 +309,8 @@ class _RunContext:
                 node['image_kind'] = data['image_kind']
             node['summary'] = summarize_long(
                 data['text'], summarization_cfg['document_model'], DOCUMENT_PROMPT,
-                summarization_cfg, self.client, self.cache, 'document', path)
+                summarization_cfg, self.client, self.cache, 'document', path,
+                skim=self.skim_options.enabled, skim_factor=self.skim_options.factor)
         # Extraction backends and model clients can raise heterogeneous errors;
         # preserve failures on this node and continue processing sibling files.
         except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -313,10 +377,19 @@ class _RunContext:
                 file_type = stat.mime if stat.mime and not suffix else (suffix or 'no extension')
                 inventory_item = {'name': entry.name, 'type': file_type, 'summary': None}
                 file_inventory.append(inventory_item)
-                if suffix.lstrip('.') in supported or is_image:
+                # Route extensionless files through the configured default and
+                # fallback extractors; the extractor router can identify their
+                # format from the file contents.
+                if suffix.lstrip('.') in supported or is_image or not suffix:
                     supported_files.append((entry, stat, inventory_item))
+        if file_inventory and not supported_files:
+            LOG.warning(
+                'No files in %s match a configured extraction route; '
+                'directory synthesis will use filenames and types only', path)
         selected_count = round(len(supported_files) * self.sample / 100)
         selected_indices = set(random.sample(range(len(supported_files)), selected_count))
+        LOG.info('Selected %d of %d supported files in %s (sample=%d%%)',
+                 selected_count, len(supported_files), path, self.sample)
         for index, (entry, stat, inventory_item) in enumerate(supported_files):
             if index in selected_indices:
                 file_node = self.process_file(entry, stat)
@@ -351,9 +424,11 @@ class _RunContext:
             sections.extend(
                 f'[directory: {child["name"]}]\n{child["summary"]}' for child in successful)
             source = '\n\n'.join(sections)
+            directory_prompt = _directory_prompt(
+                summarization_cfg, self.skim_options.enabled)
             try:
                 node['summary'] = summarize_long(
-                    source, summarization_cfg['directory_model'], DIRECTORY_PROMPT,
+                    source, summarization_cfg['directory_model'], directory_prompt,
                     summarization_cfg, self.client, self.cache, 'directory', path)
             # Preserve per-directory failures while allowing parent synthesis.
             except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -373,12 +448,15 @@ class _RunContext:
 
 # Dependencies are explicit so callers can provide their cache and model client.
 # pylint: disable=too-many-arguments
-def run(root: Path, config: dict, cache, client, destination: Path, sample: int = 100) -> dict:
+def run(root: Path, config: dict, cache, client, destination: Path, sample: int = 100,
+        skim: bool = False, skim_factor: int | None = None) -> dict:
     """Process a document tree and write its HTML summary report."""
     root = root.expanduser().resolve()
     if not root.is_dir():
         raise NotADirectoryError(root)
     if not isinstance(sample, int) or not 0 <= sample <= 100:
         raise ValueError('sample must be an integer between 0 and 100')
-    context = _RunContext(config, cache, client, destination, sample)
+    if skim_factor is not None and (not isinstance(skim_factor, int) or skim_factor < 2):
+        raise ValueError('skim_factor must be an integer greater than or equal to 2')
+    context = _RunContext(config, cache, client, destination, sample, skim, skim_factor)
     return context.execute(root)

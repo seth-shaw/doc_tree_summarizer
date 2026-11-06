@@ -34,6 +34,8 @@ Open the resulting `summary.html` in a browser. No server is needed. Expand or c
 
 Use `uv run summarizer --help` for additional flags. `--sample` accepts an integer from 0 to 100 and defaults to 100. It randomly selects that percentage of supported files in each directory for extraction and document summarization; directories still receive every immediate filename and file type, plus summaries of sampled files and child directories. Use `--sample 0` for directory summaries based on that inventory and child directory summaries. Use `--model qwen3:14b --directory-model qwen3:32b` to override the YAML models.
 
+Use `--skim` for a quicker first-look summary of each sampled document. It summarizes only the first document chunk. Set `--skim-factor N` (an integer of 2 or greater) to also summarize every Nth chunk after the first; for example, `--skim --skim-factor 5` summarizes chunks 1, 6, 11, and so on. Chunk selection applies only to document summaries; directory synthesis still uses the resulting file summaries and inventory. The summary indicates that only a subset of the document was reviewed.
+
 Progress is logged to stderr by default with timestamps: the current directory and file, hashing and extraction stages, extractor attempts, cache hits, model name, chunk counts, reduction rounds, and completion times. Operations taking longer than 60 seconds print a "Still working" message with the active path and elapsed time, repeated every 60 seconds. Ollama retries are logged, and the final message includes processed file, failure, and completed directory counts. Add `--verbose` for debug logging. To keep a log while watching progress, append `2>&1 | tee summarizer.log` to your command.
 
 ## How the hierarchy works
@@ -56,6 +58,7 @@ Edit `config.yaml`:
 - `extraction.ocr.language`: Tesseract language codes such as `eng` or `eng+fra`. Additional languages must be installed in a custom OCR image; see the [OCRmyPDF Docker documentation](https://ocrmypdf.readthedocs.io/en/latest/docker.html). To use a local installation instead, set `backend: native` and install `ocrmypdf` (on macOS: `brew install ocrmypdf`, optionally `brew install tesseract-lang`).
 - `summarization.document_model`: model for files.
 - `summarization.directory_model`: model for directory synthesis.
+- `summarization.max_output_tokens`: model response ceiling; directory prompts target 75% of this limit to leave room for a complete ending.
 - `summarization.chunk_chars`, `group_chars`: upper bounds for input chunking; tune based on actual context usage.
 
 Tika is served at `http://127.0.0.1:9998`; Ollama at `http://127.0.0.1:11434`. No cloud AI APIs are used.

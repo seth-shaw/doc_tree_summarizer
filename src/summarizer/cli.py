@@ -24,10 +24,17 @@ def main(argv=None):
     parser.add_argument('--sample', type=int, default=100, metavar='PERCENT',
                         help=('Randomly summarize this percentage of files in each directory '
                               '(0-100; default: 100)'))
+    parser.add_argument('--skim', action='store_true',
+                        help='Quickly summarize selected chunks of each sampled document')
+    parser.add_argument('--skim-factor', type=int, default=None, metavar='N',
+                        help=('In --skim mode, summarize the first chunk and every Nth chunk '
+                              'after it (N >= 2; by default, summarize only the first chunk)'))
     parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args(argv)
     if not 0 <= args.sample <= 100:
         parser.error('--sample must be between 0 and 100')
+    if args.skim_factor is not None and args.skim_factor < 2:
+        parser.error('--skim-factor must be greater than or equal to 2')
     args.directory = args.directory.expanduser()
     if not args.directory.exists():
         parser.error(f'input directory does not exist: {args.directory}')
@@ -44,7 +51,8 @@ def main(argv=None):
     cache = Cache(args.database)
     try:
         result = run(args.directory, config, cache, Ollama(
-            config['summarization']), output, sample=args.sample)
+            config['summarization']), output, sample=args.sample,
+            skim=args.skim, skim_factor=args.skim_factor)
     finally:
         cache.close()
     print(f'Report: {output.resolve()}')
