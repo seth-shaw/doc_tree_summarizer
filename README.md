@@ -32,7 +32,7 @@ uv run summarizer "$HOME/Documents/MyCollection" \
 
 Open the resulting `summary.html` in a browser. No server is needed. Expand or collapse any directory or file, or use the Expand all / Collapse all buttons.
 
-Use `uv run summarizer --help` for additional flags. `--sample` accepts an integer from 0 to 100 and defaults to 100. It randomly selects that percentage of supported files in each directory for extraction and document summarization; directories still receive every immediate filename and file type, plus summaries of sampled files and child directories. Use `--sample 0` for directory summaries based on that inventory and child directory summaries. Use `--model qwen3:14b --directory-model qwen3:32b` to override the YAML models.
+Use `uv run summarizer --help` for additional flags. `--sample` accepts an integer from 0 to 100 and defaults to 100. It randomly selects that percentage of supported files in each directory for extraction and document summarization; directories still receive every immediate filename and detected MIME type (or `unknown`), plus summaries of sampled files and child directories. The directory summarizer is instructed to use MIME types as file-type evidence and not infer formats from extensions. Use `--sample 0` for directory summaries based on that inventory and child directory summaries. Use `--model qwen3:14b --directory-model qwen3:32b` to override the YAML models.
 
 Use `--skim` for a quicker first-look summary of each sampled document. It summarizes only the first document chunk. Set `--skim-factor N` (an integer of 2 or greater) to also summarize every Nth chunk after the first; for example, `--skim --skim-factor 5` summarizes chunks 1, 6, 11, and so on. Chunk selection applies only to document summaries; directory synthesis still uses the resulting file summaries and inventory. The summary indicates that only a subset of the document was reviewed.
 
@@ -40,7 +40,7 @@ Progress is logged to stderr by default with timestamps: the current directory a
 
 ## How the hierarchy works
 
-At the default sample level of 100, every supported file is extracted and summarized. Each directory is summarized from **only its immediate file inventory (filenames and types, with summaries for sampled files) and immediate subdirectory summaries**, not from all descendant source text. Directories are processed bottom-up. For long inputs, chunk summaries are recursively reduced so the model receives bounded text.
+At the default sample level of 100, every supported file is extracted and summarized. Each directory is summarized from **only its immediate file inventory (filenames, detected MIME types, and summaries for sampled files) and immediate subdirectory summaries**, not from all descendant source text. Directories are processed bottom-up. For long inputs, chunk summaries are recursively reduced so the model receives bounded text.
 
 Each directory entry in the HTML report also shows a programmatically calculated count and total size for all regular files beneath it, plus the earliest and latest file modification dates in UTC. Each summarized file shows its size and modification date. Sizes use bytes below 1 KB and scale through KB, MB, GB, and TB using 1,000 bytes per unit. Symlinks and the generated report are excluded; files without a configured extraction route still count toward directory totals.
 
