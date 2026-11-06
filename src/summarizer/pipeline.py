@@ -148,6 +148,69 @@ def _summarize_chunks(parts: list[str], prompt: str, options: _SkimOptions,
         for index, part in selected]
 
 
+def _pair_summaries(summaries: list[str], group_limit: int, round_number: int,
+                    reduction_prompt: str, cached_call) -> list[str]:
+    """Reduce consecutive summary pairs to guarantee progress."""
+    paired = []
+    for i in range(0, len(summaries), 2):
+        pair = '\n\n---\n\n'.join(summaries[i:i + 2])
+        label = (
+            f'reduction round {round_number}, pair '
+            f'{i // 2 + 1}/{(len(summaries) + 1) // 2}')
+        paired.append(cached_call(
+            reduction_prompt, pair[:group_limit], f'pair-{digest(pair)}', label))
+    return paired
+
+
+def _reduce_round(summaries: list[str], group_limit: int, round_number: int,
+                  reduction_prompt: str, cached_call) -> list[str]:
+    """Run one bounded reduction round."""
+    grouped = []
+    current = []
+    size = 0
+    for item in summaries:
+        if current and size + len(item) + 20 > group_limit:
+            grouped.append(current)
+            current, size = [], 0
+        current.append(item)
+        size += len(item) + 20
+    if current:
+        grouped.append(current)
+    next_round = []
+    for i, group in enumerate(grouped):
+        combined = '\n\n---\n\n'.join(group)
+        label = f'reduction round {round_number}, group {i + 1}/{len(grouped)}'
+        if len(combined) > group_limit:
+            suffix = f'reduce-truncated-{digest(combined)}'
+            next_round.append(cached_call(
+                reduction_prompt, combined[:group_limit], suffix, label))
+        elif len(group) == 1 and len(grouped) > 1:
+            next_round.append(group[0])
+        else:
+            next_round.append(cached_call(reduction_prompt, combined,
+                                          f'reduce-{digest(combined)}', label))
+    if len(next_round) >= len(summaries):
+        return _pair_summaries(
+            summaries, group_limit, round_number, reduction_prompt, cached_call)
+    return next_round
+
+
+def _reduce_summaries(summaries: list[str], config: dict, context: str,
+                      reduction_prompt: str, cached_call) -> str:
+    """Recursively reduce partial summaries into one bounded result."""
+    round_number = 0
+    while len(summaries) > 1:
+        round_number += 1
+        LOG.info('Reducing %s (round %d, %d partial summaries)',
+                 context, round_number, len(summaries))
+        group_limit = int(config.get('group_chars', 14000))
+        if group_limit < 100:
+            raise ValueError('group_chars must be >=100')
+        summaries = _reduce_round(
+            summaries, group_limit, round_number, reduction_prompt, cached_call)
+    return summaries[0]
+
+
 # Explicit dependencies keep chunking reusable and make cache/model behavior
 # testable without module-level state.
 # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
@@ -189,52 +252,7 @@ def summarize_long(text: str, model: str, prompt: str, config: dict, client, cac
             'and end with a complete sentence.')
     summaries = _summarize_chunks(
         parts, prompt, _SkimOptions(skim, skim_factor), cached_call, context)
-    # Recursive bounded reduction: never send all chunks at once if the combined text is too long.
-    round_number = 0
-    while len(summaries) > 1:
-        round_number += 1
-        LOG.info('Reducing %s (round %d, %d partial summaries)',
-                 context, round_number, len(summaries))
-        group_limit = int(config.get('group_chars', 14000))
-        if group_limit < 100:
-            raise ValueError('group_chars must be >=100')
-        grouped = []
-        current = []
-        size = 0
-        for item in summaries:
-            if current and size + len(item) + 20 > group_limit:
-                grouped.append(current)
-                current, size = [], 0
-            current.append(item)
-            size += len(item) + 20
-        if current:
-            grouped.append(current)
-        # Oversized individual summaries still need to be bounded.
-        next_round = []
-        for i, group in enumerate(grouped):
-            combined = '\n\n---\n\n'.join(group)
-            label = f'reduction round {round_number}, group {i + 1}/{len(grouped)}'
-            if len(combined) > group_limit:
-                suffix = f'reduce-truncated-{digest(combined)}'
-                next_round.append(cached_call(
-                    reduction_prompt, combined[:group_limit], suffix, label))
-            elif len(group) == 1 and len(grouped) > 1:
-                next_round.append(group[0])
-            else:
-                next_round.append(cached_call(reduction_prompt, combined,
-                                  f'reduce-{digest(combined)}', label))
-        if len(next_round) >= len(summaries):
-            # Bound progress by pairing consecutive summaries, even if they are long.
-            next_round = []
-            for i in range(0, len(summaries), 2):
-                pair = '\n\n---\n\n'.join(summaries[i:i + 2])
-                pair_label = (
-                    f'reduction round {round_number}, pair '
-                    f'{i // 2 + 1}/{(len(summaries) + 1) // 2}')
-                next_round.append(cached_call(
-                    reduction_prompt, pair[:group_limit], f'pair-{digest(pair)}', pair_label))
-        summaries = next_round
-    return summaries[0]
+    return _reduce_summaries(summaries, config, context, reduction_prompt, cached_call)
 
 
 class _RunContext:
