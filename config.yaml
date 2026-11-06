@@ -2,7 +2,7 @@ extraction:
   default: builtin
   routes:
     # Docling document formats (requires uv sync --python 3.12 --extra docling).
-    # PDF/image OCR uses Docling's pipeline; extraction.ocr below is builtin-only.
+    # PDF/image OCR uses Docling with the local Tesseract CLI.
     pdf: docling
     docx: docling
     dotx: docling
@@ -86,12 +86,7 @@ extraction:
     timeout_seconds: 180
   docling:
     enabled: true
-  ocr:
-    backend: docker  # docker or native
-    # compose_file: /absolute/path/to/compose.yaml  # defaults to this repository's compose.yaml
-    mode: auto  # off, auto, always
-    language: eng
-    min_chars_per_page: 40
+    ocr_language: eng  # Tesseract language code; combine codes with +, e.g. eng+fra
   image:
     model: qwen2.5vl:3b
     max_pages: 5  # Sample this many pages when characterizing multi-page TIFF/GIF files.

@@ -4,7 +4,6 @@ version = "0.2.0"
 description = "Offline-first bottom-up hierarchical document summarization with Ollama"
 requires-python = ">=3.12"
 dependencies = [
-  "pymupdf>=1.24,<2",
   "python-docx>=1.1,<2",
   "beautifulsoup4>=4.12,<5",
   "filetype>=1.2,<2",
